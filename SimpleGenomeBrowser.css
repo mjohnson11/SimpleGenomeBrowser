@@ -1,0 +1,56 @@
+
+.tnseq_key_row {
+  cursor: pointer;
+}
+
+.tnseq_key_row:hover {
+  opacity: 0.6;
+}
+
+.zoom_thing:hover {
+  opacity: 0.5;
+}
+
+.sgb_gene:hover {
+  opacity: 0.7;
+}
+
+.tnseq_block:hover {
+  stroke: black;
+  stroke-width: 1px;
+}
+
+.autoComplete_wrapper ul {
+  position: absolute;
+  top: 30px;
+  margin: 0px;
+  padding: 0px;
+  width: 170px;
+  background-color: #CCC;
+  border-left: 1px solid #CCC;
+  border-right: 1px solid #CCC;
+}
+
+.autoComplete_wrapper li {
+  margin-top: 1px;
+  margin-bottom: 1px;
+  padding-left: 5px;
+  padding-right: 20px;
+  background-color: #AAA;
+  list-style-type: none;
+  color: #333;
+}
+
+.autoComplete_wrapper li mark {
+  color: #FFF;
+  background-color: transparent;
+}
+
+.autoComplete_wrapper li:hover {
+  background-color: #FF8888;
+  cursor: pointer;
+}
+
+.autoComplete_wrapper li[aria-selected="true"] {
+  background-color: #FF8888;
+}
