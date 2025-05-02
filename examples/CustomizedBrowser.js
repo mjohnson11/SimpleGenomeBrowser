@@ -1,4 +1,4 @@
-import { SimpleGenomeBrowser, gffTrack, geneTrack } from "../src/SimpleGenomeBrowser.js";
+import { SimpleGenomeBrowser, gffTrack, geneTrack } from "https://cdn.jsdelivr.net/npm/simple-genome-browser@1.0.1/+esm";
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 
 const colors = [
@@ -27,8 +27,8 @@ const color_key = {
 class phastestRegionTrack extends geneTrack {
   // Maybe a somewhat odd example since PHASTEST already has
   // a great genome browser, but...
-  constructor(sgb, name, h, top, config, phastest_file) {
-    super(sgb, name, h, top, config)
+  constructor(browser, name, h, top, config, phastest_file) {
+    super(browser, name, h, top, config)
     const self = this;
     self.contig_column = 'scaffoldId';
     self.data = [];
@@ -63,8 +63,8 @@ class phastestRegionTrack extends geneTrack {
 
 class customColorsGFFtrack extends gffTrack {
 
-  constructor(sgb, name, h, top, config, gff_file, type_filter='CDS') {
-    super(sgb, name, h, top, config, gff_file, type_filter);
+  constructor(browser, name, h, top, config, gff_file, type_filter='CDS') {
+    super(browser, name, h, top, config, gff_file, type_filter);
     this.make_color_legend(color_key, {'title': 'Color Key'})
   }
 

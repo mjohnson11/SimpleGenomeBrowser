@@ -1477,7 +1477,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
     // default function for clicking a row name (see make_summary_sidebar below)
     this.make_summary_sidebar(row_name);
     // optional additional function to add behavior on click
-    if (self.row_name_click) self.row_name_click();
+    if (this.row_name_click) this.row_name_click();
   }
 
   make_summary_sidebar(row_name) {
@@ -1647,15 +1647,15 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
     let xScale, yScale;
 
     function updateScatterplot() {
-      // Filter data for valid scores in both columns
+      // Set nulls to 0 in both columns
       const plotData = self.contig_filt.filter(row =>
-        row[row_name] !== null && !isNaN(row[row_name]) &&
-        row[yAxisColumn] !== null && !isNaN(row[yAxisColumn]) &&
+        //row[row_name] !== null && !isNaN(row[row_name]) &&
+        //row[yAxisColumn] !== null && !isNaN(row[yAxisColumn]) &&
         (row.locusId in self.sgb.search_dict)
       ).map(row => ({
         gene: self.sgb.search_dict[row.locusId].gene_data,
-        x: row[row_name],
-        y: row[yAxisColumn]
+        x: row[row_name] || 0,
+        y: row[yAxisColumn] || 0
       }));
 
       // Update scales
@@ -2218,7 +2218,7 @@ class quantitativeLineTrack extends quantitativeYaxesTrack {
     const d = pixelInfo.data;
     const column = pixelInfo.column;
     this.sgb.tooltip.selectAll('*').remove();
-    this.sgb.tooltip.html(`${d[self.begin_column]}-${d[self.end_column]}: ${column} = ${d[column]}`);
+    this.sgb.tooltip.html(`${d[this.begin_column]}-${d[this.end_column]}: ${column} = ${d[column]}`);
     this.sgb.show_tooltip(event.pageX, event.pageY);
   }
 

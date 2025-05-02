@@ -1,4 +1,4 @@
-import { SimpleGenomeBrowser, gffTrack, quantitativeFeatureTrack, quantitativePointTrack } from "../src/SimpleGenomeBrowser.js";
+import { SimpleGenomeBrowser, gffTrack, quantitativeFeatureTrack, quantitativePointTrack } from "https://cdn.jsdelivr.net/npm/simple-genome-browser@1.0.1/+esm";
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 
 const use_cols = ['Minimal Media+Sucrose', 'Minimal Media+Glucose', 'Cucumber_1', 'Cucumber_2'];
@@ -11,8 +11,8 @@ const c_scale = d3.scaleDiverging()
 
 class myTnseqTrack extends quantitativeFeatureTrack {
 
-  constructor(sgb, name, h, top, config, display_columns, display_names, contig_column, tnseq_file) {
-    super(sgb, name, h, top, config, display_columns, display_names, contig_column);
+  constructor(browser, name, h, top, config, display_columns, display_names, contig_column, tnseq_file) {
+    super(browser, name, h, top, config, display_columns, display_names, contig_column);
     const self = this;
 
     self.set_diverging_colorscale(c_scale);
@@ -40,8 +40,8 @@ class myTnseqTrack extends quantitativeFeatureTrack {
 }
 
 class myTnSeqPointTrack extends quantitativePointTrack {
-  constructor(sgb, name, h, top, config, contig_col, pos_column, data_file) {
-    super(sgb, name, h, top, config, contig_col, pos_column);
+  constructor(browser, name, h, top, config, contig_col, pos_column, data_file) {
+    super(browser, name, h, top, config, contig_col, pos_column);
     const self = this;
     self.icols = ['barcode', 'rcbarcode', 'scaffoldId', 'strand', 'pos', 'locusId']
     this.data_file = data_file;
@@ -70,10 +70,10 @@ async function load_browser(strain, fasta_file, aa_file, gff_file, tn_file, tn_c
   const my_browser = new SimpleGenomeBrowser(strain, true, 1200, 900, b_div,
     {'fasta_file': fasta_file, 'aa_file': aa_file}
   );
-  my_browser.loadingPromise.then(sgb_instance => {
-    sgb_instance.tracks.push(new gffTrack(sgb_instance, 'GFF track', 50, 150, {}, gff_file));
-    sgb_instance.tracks.push(new myTnseqTrack(sgb_instance, 'TnSeq track', 200, 225, {}, use_cols, use_cols, 'scaffoldId', tn_file));
-    sgb_instance.tracks.push(new myTnSeqPointTrack(sgb_instance, 'TnSeq counts', 400, 450, 
+  my_browser.loadingPromise.then(browser => {
+    browser.tracks.push(new gffTrack(browser, 'GFF track', 50, 150, {}, gff_file));
+    browser.tracks.push(new myTnseqTrack(browser, 'TnSeq track', 200, 225, {}, use_cols, use_cols, 'scaffoldId', tn_file));
+    browser.tracks.push(new myTnSeqPointTrack(browser, 'TnSeq counts', 400, 450, 
       {'log_y': true, 'clip': true, 'load_threshold':400000, 'yticks': [10, 100, 1000, 10000], 'ytick_formatter': (d => d ==10 ? '<=10' : d)}, 'scaffoldId', 'pos', tn_counts_file));
   })
 }
