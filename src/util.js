@@ -1,3 +1,36 @@
+import * as aq from 'https://cdn.jsdelivr.net/npm/arquero@7.2.0/dist/arquero.min.js/+esm';
+
+async function fetch_server_data(fetch_path, json_object) {
+  // Retrieves data from a parquet file on the server
+  const response = await fetch(fetch_path, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(json_object),
+  });
+  
+  if (!response.ok) {
+    try {
+      const errorData = await response.json();
+      console.error("Error fetching data:", errorData.error || response.statusText);
+    } catch (e) {
+      console.error("Error fetching data:", response.statusText);
+    }
+    return;
+  }
+  
+  const buffer = await response.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  const table = aq.fromArrow(bytes);
+  const data = table.objects();
+  if ('data_log_message' in Object.keys(json_object)) {
+    console.log(json_object.data_log_message, data);
+  }
+  
+  return data;
+} 
+
 function parse_fasta(data) {
   let seq_dict = {};
   let currentSeq = "";
@@ -69,4 +102,4 @@ function reverse_complement(string) {
   return rev_comp;
 }
 
-export { parse_fasta, fit_text, measure_text, reverse_complement, copy_sequence };
+export { fetch_server_data, parse_fasta, fit_text, measure_text, reverse_complement, copy_sequence };

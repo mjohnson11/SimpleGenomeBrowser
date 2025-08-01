@@ -1,4 +1,6 @@
-import { SimpleGenomeBrowser, gffTrack, geneTrack } from "https://cdn.jsdelivr.net/npm/simple-genome-browser@1.0.1/+esm";
+//import { SimpleGenomeBrowser, gffTrack, geneTrack } from "https://cdn.jsdelivr.net/npm/simple-genome-browser@1.0.1/+esm";
+import { SimpleGenomeBrowser, staticFeatureData } from "../src/SimpleGenomeBrowser.js";
+import { gffTrack, geneTrack } from "../src/SGB_tracks.js";
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 
 const colors = [
@@ -31,7 +33,7 @@ class phastestRegionTrack extends geneTrack {
     super(browser, name, h, top, config)
     const self = this;
     self.contig_column = 'scaffoldId';
-    self.data = [];
+    let raw_data = [];
     d3.json(phastest_file).then(phastest_json => {
       self.phastest_json = phastest_json;
       for (let rec of phastest_json) {
@@ -44,19 +46,20 @@ class phastestRegionTrack extends geneTrack {
           'desc': `Completeness: ${rec.completeness}, GC: ${rec.GC}`,
           'phastest_row': rec
         };
-        self.data.push(row);
+        raw_data.push(row);
         self.sgb.search_dict[String(row['locusId'])] = {
           'contig_column': self.contig_column,
           'gene_data': row,
           'track': self
         }
       }
-
+      self.data = new staticFeatureData(self.sgb, self.name+'_data', raw_data, config);
+      console.log('phastest data loaded:', self.data);
       // Updating autocomplete search bar
       self.sgb.autoCompleteEl.data = {src: Object.keys(self.sgb.search_dict).map((k) => k + ' ' + self.sgb.search_dict[k].gene_data.name + ' ' + self.sgb.search_dict[k].gene_data.desc)};
-      self.filter_by_contig();
-      console.log('phastest data loaded:', self.data);
-      self.display_region()
+      self.data.filter_by_contig();
+      self.data.update_data();
+      self.display_region();
     });
   }
 }
