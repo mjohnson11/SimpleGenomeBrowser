@@ -1,4 +1,5 @@
-import { SimpleGenomeBrowser, gbTrack } from "https://cdn.jsdelivr.net/npm/simple-genome-browser@1.0.1/+esm";
+import { SimpleGenomeBrowser } from "../src/SimpleGenomeBrowser.js";
+import { gbTrack } from "../src/data_tracks.js";
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 import genbankParser from 'https://cdn.jsdelivr.net/npm/genbank-parser@1.2.4/+esm'
 
@@ -11,7 +12,7 @@ async function load_browser(genbank_json) {
     {'genbank_json': genbank_json}
   );
   my_browser.loadingPromise.then(browser => {
-    browser.tracks.push(new gbTrack(browser, 'gene_track', 50, 150, {}, genbank_json));
+    browser.add_track(new gbTrack(browser, 'gene_track', 50, 150, {}, genbank_json));
   })
 }
 

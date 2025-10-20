@@ -1,6 +1,9 @@
+// Now need to show we can append multiple point tracks and tie together...
+
 //import { SimpleGenomeBrowser, gffTrack, quantitativeFeatureTrack, quantitativePointTrack } from "https://cdn.jsdelivr.net/npm/simple-genome-browser@1.0.1/+esm";
 import { SimpleGenomeBrowser, staticFeatureData, staticPointData } from "../src/SimpleGenomeBrowser.js";
-import { gffTrack, quantitativeFeatureTrack, quantitativePointTrack } from "../src/SGB_tracks.js";
+import { quantitativePointTrack } from "../src/SGB_tracks.js";
+import { gffTrack, heatmapTrack } from "../src/data_tracks.js";
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
 
 const use_cols = ['Minimal Media+Sucrose', 'Minimal Media+Glucose', 'Cucumber_1', 'Cucumber_2'];
@@ -10,41 +13,6 @@ const c_scale = d3.scaleDiverging()
   .range(["#2d03fc", "#CCCCCC", "#d1b500"])
   .unknown('#AAA');
   
-
-class myTnseqTrack extends quantitativeFeatureTrack {
-
-  constructor(browser, name, h, top, config, display_columns, display_names, contig_column, tnseq_file) {
-    super(browser, name, h, top, config, display_columns, display_names, contig_column);
-    const self = this;
-
-    self.set_diverging_colorscale(c_scale);
-
-    let raw_data;
-    self.loadingPromise = new Promise((resolve, reject) => {
-      const dataPromise = (typeof tnseq_file === 'object')
-        ? Promise.resolve(tnseq_file)  // Use existing object if provided
-        : d3.tsv(tnseq_file, d3.autoType); // Otherwise, load from TSV
-      dataPromise.then(data => {
-        raw_data = data;
-        raw_data.forEach((row, i) => {
-          row.sgb_index = i;
-          row.begin = row.begin || row.start; // terminology thing to fix
-        });
-
-        console.log('tnseq data loaded:', raw_data);
-        self.data = new staticFeatureData(self.sgb, self.name+'_data', raw_data, config);
-        self.data.filter_by_contig(self.contig_column);
-        self.data.update_data();
-        self.display_region();
-        resolve(self);
-      }).catch(reject);
-    });
-
-    
-
-  }
-
-}
 
 class myTnSeqPointTrack extends quantitativePointTrack {
   constructor(browser, name, h, top, column, config, contig_col, pos_column, data_file) {
@@ -87,10 +55,10 @@ async function load_browser(strain, fasta_file, aa_file, gff_file, tn_file, tn_c
     {'fasta_file': fasta_file, 'aa_file': aa_file}
   );
   my_browser.loadingPromise.then(browser => {
-    browser.tracks.push(new gffTrack(browser, 'GFF track', 50, 150, {}, gff_file));
-    browser.tracks.push(new myTnseqTrack(browser, 'TnSeq track', 200, 225, {}, use_cols, use_cols, 'scaffoldId', tn_file));
-    browser.tracks.push(new myTnSeqPointTrack(browser, 'TnSeq counts', 400, 450, 'Cucumber_1',
-      {'log_y': true, 'clip': true, 'load_threshold':400000, ydomain: [10, 10000], 'yticks': [10, 100, 1000, 10000], 'ytick_formatter': (d => d ==10 ? '<=10' : d)}, 'scaffoldId', 'pos', tn_counts_file));
+    browser.add_track(new gffTrack(browser, 'GFF track', 50, 150, {}, gff_file));
+    browser.add_track(new heatmapTrack(browser, 'TnSeq track', 200, 225, {}, use_cols, use_cols, 'scaffoldId', 'begin', 'end', 'locusId', c_scale, tn_file));
+    /*browser.add_track(new myTnSeqPointTrack(browser, 'TnSeq counts', 400, 450, 'Cucumber_1',
+      {'log_y': true, 'clip': true, 'load_threshold':400000, ydomain: [10, 10000], left_buf: 40, 'yticks': [10, 100, 1000, 10000], 'ytick_formatter': (d => d ==10 ? '<=10' : d)}, 'scaffoldId', 'pos', tn_counts_file));*/
     })
 }
 

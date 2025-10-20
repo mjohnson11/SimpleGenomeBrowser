@@ -113,5 +113,64 @@ async function load_browser(strain, fasta_file, gff_file, phastest_file) {
 
 // Test the genbank parser once the page loads
 document.addEventListener('DOMContentLoaded', () => {
-  load_browser('Erwinia tracheiphila BHKY', 'example_data/BHKY.fna', 'example_data/BHKY.gff', 'example_data/BHKY_PHASTEST_predicted_phage_regions.json');
+  const browser_div = d3.select('#browser_div');
+
+  browser_div.append('label')
+    .attr('for', 'fasta_file')
+    .text('Upload FASTA file: ');
+
+  // Append the file input element
+  const fasta_input = browser_div.append('input')
+    .attr('type', 'file')
+    .attr('id', 'fasta_file')
+    .attr('name', 'fasta_file');
+
+  browser_div.append('br');
+
+  browser_div.append('label')
+    .attr('for', 'gff_file')
+    .text('Upload GFF file: ');
+
+  const gff_input = browser_div.append('input')
+    .attr('type', 'file')
+    .attr('id', 'gff_file')
+    .attr('name', 'gff_file');
+
+    browser_div.append('br');
+
+  browser_div.append('label')
+    .attr('for', 'phastest_file')
+    .text('Upload PHASTEST JSON file: ');
+  
+  const phastest_input = browser_div.append('input')
+    .attr('type', 'file')
+    .attr('id', 'phastest_file')
+    .attr('name', 'phastest_file');
+
+  browser_div.append('br');
+
+  const load_button = browser_div.append('button')
+    .text('Load Browser')
+    .on('click', async () => {
+      const fasta_file = fasta_input.node().files[0];
+      const gff_file = gff_input.node().files[0];
+      const phastest_file = phastest_input.node().files[0];
+
+      if (fasta_file && gff_file) {
+        // Read the files as text
+        const fasta_text = await fasta_file.text();
+        const gff_text = await gff_file.text();
+        const phastest_text = await phastest_file ? phastest_file.text() : '';
+        
+        // Create data URLs for the files
+        const fasta_url = 'data:text/plain;base64,' + btoa(fasta_text);
+        const gff_url = 'data:text/plain;base64,' + btoa(gff_text);
+        const phastest_url = 'data:text/json;base64,' + btoa(phastest_text);
+        
+        // Load the browser with the data URLs
+        load_browser('Uploaded Data', fasta_url, gff_url, phastest_url);
+      } else {
+        alert('Please select all three files.');
+      }
+    });
 });

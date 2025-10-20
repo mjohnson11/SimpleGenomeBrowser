@@ -1,3 +1,6 @@
+// This encompasses the basic display tracks, which do not involve data loading
+// They are extended in data_tracks.js and can be extended elsewhere
+
 // Need to refine data_map smartly - needs to be updated when things load... etc. I think I just need to make an "add_track" function
 // LOTS OF BUG SQUASHING
 // ADDING IN NICE FORGOTTEN FEATURES
@@ -84,7 +87,6 @@ class baseTrack {
       })
 
     if (!config.hide_title) {
-      console.log('titling')
       self.show_title(self.name);
     }
   }
@@ -241,10 +243,18 @@ class baseTrack {
 class baseFeatureTrack extends baseTrack {
   /**
    * Extends `baseTrack` to provide a base class for tracks that display feature data.
-   * Assumes feature data is an array of objects with `locusId`, `scaffoldId`, `begin`, and `end` attributes.
+   * Assumes feature data is an array of objects with attributes for contig, start, end, and id (e.g. locusId)
    * Provides methods for filtering feature data by contig and genomic region.
    * This class is intended to be further extended by specific feature track types.
    */
+
+  constructor(sgb, name, h, top, config, contig_column, start_column, end_column, id_column) {
+    super(sgb, name, h, top, config);
+    this.contig_col = contig_column;
+    this.start_col = start_column;
+    this.end_col = end_column;
+    this.id_col = id_column;
+  }
 
   hover_function(e, gene_object) {
     // use default function provided by sgb
@@ -280,7 +290,7 @@ class geneTrack extends baseFeatureTrack {
 
   load_region() {
     const self = this;
-    console.log('Filtered gene data', self.data.filt_data);
+    //console.log('Filtered gene data', self.data.filt_data);
     // remove holder g element, then remake
     self.g.remove()
     self.g = self.svg.append('g')
@@ -293,8 +303,7 @@ class geneTrack extends baseFeatureTrack {
         .attr('opacity', 0.8)
         .style('cursor', 'default')
         .on('mouseover', (e, d) => {
-          //console.log(e.x, e.y, d.name);
-          self.hover_function(e, self.sgb.search_dict[d.locusId].gene_data);
+          self.hover_function(e, d, self);
         })
         .on('mousemove', (e) => self.sgb.move_tooltip(e.x, e.y))
         .on('mouseout', () => self.sgb.hide_tooltip())
@@ -318,7 +327,7 @@ class geneTrack extends baseFeatureTrack {
 
   make_gene_display(d) {
     const self = this;
-    const [left, right] = self.sgb.get_feature_pixel_position(d.begin, d.end);
+    const [left, right] = self.sgb.get_feature_pixel_position(d[self.start_col], d[self.end_col]);
     const width = right-left;
     const height = Math.max(Math.min(30, 1000000/self.sgb.domain_wid), 20);
     const halfHeight = height / 2;
@@ -362,177 +371,6 @@ class geneTrack extends baseFeatureTrack {
   }
 }
 
-class gffTrack extends geneTrack {
-  /**
-   * Extends `geneTrack` to load and display gene features from a GFF (General Feature Format) file.
-   * Parses GFF data and adds gene information to the browser's search index.
-   *
-   * @param {SimpleGenomeBrowser} sgb - The SimpleGenomeBrowser instance this track belongs to.
-   * @param {string} name - The name of the track.
-   * @param {number} h - The height of the track in pixels.
-   * @param {number} top - The top position of the track in pixels.
-   * @param {object} [config={}] - An optional configuration object for the track.
-   * @param {string} gff_file - Path to the GFF file to load.
-   * @param {string} [type_filter='CDS'] - Feature type to filter for from the GFF file (e.g., 'CDS', 'gene', 'mRNA').
-   *
-   * @customizable_methods
-   * - Inherits customizable methods from `geneTrack`: `hover_function`, `click_function`, `get_feature_stroke`, `get_feature_fill`, `make_gene_display`, `load_region`.
-   *   Can customize these methods to alter the appearance or information displayed for GFF-loaded genes.
-   */
-
-  constructor(sgb, name, h, top, config, gff_file, type_filter='CDS') {
-    super(sgb, name, h, top, config)
-    const self = this;
-    self.gff_file = gff_file;
-    self.contig_col = config.contig_col ?? 'scaffoldId';
-    d3.text(gff_file).then(function(tdata) {
-      let raw_data = d3.tsvParseRows(tdata.split('\n').filter((line) => (!line.startsWith('#'))).join('\n'), self.gff_parse);
-      if (type_filter) {
-        raw_data = raw_data.filter((d) => d.type==type_filter);
-      }
-      for (let row of raw_data) {
-        row.attributes.split(';').forEach(function(pair) {
-          let keyVal = pair.split('=');
-          row[keyVal[0]] = keyVal[1];
-        })
-        // Some renaming for consistency
-        row['name'] = row['gene'] || row['locus_tag'];
-        row['locusId'] = row['locus_tag'];
-        row['desc'] = row['product'];
-        // Adding info to the search index
-        self.sgb.search_dict[String(row['locusId'])] = {
-          'contig_col': self.contig_col,
-          'gene_data': row,
-          'track': self
-        }
-      }
-      self.data = new staticFeatureData(self.sgb, self.name+'_data', raw_data, config);
-      console.log('gff data loaded:', self.data);
-      // Updating autocomplete search bar
-      self.sgb.autoCompleteEl.data = {src: Object.keys(self.sgb.search_dict).map((k) => k + ' ' + self.sgb.search_dict[k].gene_data.name + ' ' + self.sgb.search_dict[k].gene_data.desc)};
-      self.data.filter_by_contig();
-      self.data.update_data();
-      self.display_region();
-    })
-  }
-
-  gff_parse(r) {
-    return {
-      'scaffoldId': r[0], 
-      'type': r[2], 
-      'begin': parseInt(r[3]), 
-      'end': parseInt(r[4]),
-      'strand': r[6],
-      'phase': r[7],
-      'attributes': r[8]
-    }
-  }
-
-}
-
-class gbTrack extends geneTrack {
-  /**
-   * Extends `geneTrack` to load and display gene features from pre-loaded Genbank JSON data.
-   * Parses Genbank JSON (output from https://github.com/cheminfo-js/genbank-parser) 
-   * and adds gene information to the browser's search index.
-   *
-   * @param {SimpleGenomeBrowser} sgb - The SimpleGenomeBrowser instance this track belongs to.
-   * @param {string} name - The name of the track.
-   * @param {number} h - The height of the track in pixels.
-   * @param {number} top - The top position of the track in pixels.
-   * @param {object} [config={}] - An optional configuration object for the track.
-   * @param {array} genbank_json - Array of Genbank JSON objects to load feature data from.
-   * @param {string} [type_filter='CDS'] - Feature type to filter for from the Genbank data (e.g., 'CDS', 'gene', 'mRNA').
-   *
-   * @customizable_methods
-   * - Inherits customizable methods from `geneTrack`: `hover_function`, `click_function`, `get_feature_stroke`, `get_feature_fill`, `make_gene_display`, `load_region`.
-   *   Can customize these methods to alter the appearance or information displayed for Genbank-loaded genes.
-   */
-  constructor(sgb, name, h, top, config, genbank_json, type_filter='CDS') {
-    super(sgb, name, h, top, config)
-    const self = this;
-    self.genbank_json = genbank_json;
-    self.contig_col = config.contig_col ?? 'scaffoldId';
-    let raw_data = [];
-    for (let rec of genbank_json) {
-      const scaffoldId = rec.name;
-      for (let feature of rec.features) {
-        if (feature.type == type_filter) {
-          let row = {
-            'scaffoldId': scaffoldId,
-            'locusId': feature.notes.locus_tag[0],
-            'begin': feature.start,
-            'end': feature.end,
-            'strand': feature.strand == 1 ? '+' : '-',
-            'name': feature.name,
-            'desc': feature.notes.product ? feature.notes.product[0] : '',
-            'pseudo': feature.notes.pseudo ? true : false,
-            'gb_row': feature
-          };
-          raw_data.push(row);
-          self.sgb.search_dict[String(row['locusId'])] = {
-            'contig_col': self.contig_col,
-            'gene_data': row,
-            'track': self
-          }
-        }
-      }
-    }
-    self.data = new staticFeatureData(self.sgb, self.name+'_data', raw_data, config);
-    console.log('gb data loaded:', self.data);
-    // Updating autocomplete search bar
-    self.sgb.autoCompleteEl.data = {src: Object.keys(self.sgb.search_dict).map((k) => k + ' ' + self.sgb.search_dict[k].gene_data.name + ' ' + self.sgb.search_dict[k].gene_data.desc)};
-    self.data.filter_by_contig();
-    self.display_region();
-  }
-}
-
-class geneTableTrack extends geneTrack {
-  /**
-   * Extends `geneTrack` to load and display gene features from a TSV (Tab-Separated Values) gene table file.
-   * Assumes the gene table has columns: `locusId`, `name`, `scaffoldId`, `begin`, `end`, `desc`.
-   *
-   * @param {SimpleGenomeBrowser} sgb - The SimpleGenomeBrowser instance this track belongs to.
-   * @param {string} name - The name of the track.
-   * @param {number} h - The height of the track in pixels.
-   * @param {number} top - The top position of the track in pixels.
-   * @param {object} [config={}] - An optional configuration object for the track.
-   * @param {string} gene_file - Path to the TSV gene table file.
-   * @param {string} [chromo_column='scaffoldId'] - The column name in the gene table that corresponds to the chromosome/contig ID.
-   *
-   * @customizable_methods
-   * - Inherits customizable methods from `geneTrack`: `hover_function`, `click_function`, `get_feature_stroke`, `get_feature_fill`, `make_gene_display`, `load_region`.
-   *   Can customize these methods to alter the appearance or information displayed for gene table-loaded genes.
-   */
-
-  constructor(sgb, name, h, top, config, gene_file) {
-    super(sgb, name, h, top, config)
-    const self = this;
-    self.gene_file = gene_file;
-    self.contig_col = config.contig_col ?? 'scaffoldId';
-    d3.tsv(gene_file, d3.autoType).then(function(tdata) {
-      let raw_data  = tdata;
-      for (let row of raw_data) {
-        row['locusId'] = String(row['locusId']); // convert to string to avoid number-string comparison issues
-        row['search_text'] = row['locusId'] + ' ' + row['name'] + ' ' + row['desc'];
-        // Adding info to the search index
-        self.sgb.search_dict[String(row['locusId'])] = {
-          'contig_col': self.contig_col,
-          'gene_data': row,
-          'track': self
-        }
-      }
-      self.data = new staticFeatureData(self.sgb, self.name+'_data', raw_data, config);
-      console.log('gene data loaded:', self.data);
-      // Updating autocomplete search bar
-      self.sgb.autoCompleteEl.data = {src: Object.keys(self.sgb.search_dict).map((k) => k + ' ' + self.sgb.search_dict[k].gene_data.name + ' ' + self.sgb.search_dict[k].gene_data.desc)};
-      self.data.filter_by_contig();
-      self.data.update_data();
-      self.display_region();
-    })
-  }
-}
-
 class quantitativeFeatureTrack extends baseFeatureTrack {
   /**
    * Extends `baseFeatureTrack` to display quantitative data associated with genomic features, typically as a heatmap-like track.
@@ -552,6 +390,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
    *  Inherits configuration options from `baseFeatureTrack` and `baseTrack`.
    *
    * @customizable_methods
+   * MUST CALL set_diverging_colorscale or define get_feature_block_fill
    * - `set_diverging_colorscale(scale)`: Call this method to customize the color scale used for the heatmap.
    *                                     Expects a d3 diverging color scale function.
    * - `get_feature_block_fill(d, column): Provide this method to customize the color with a function that takes as input
@@ -562,21 +401,20 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
    *                                       Receives the mouse event, the column name being displayed, and the feature data object.
    * - `click_function(event, column, d)`: Override to implement actions when a feature block is clicked.
    *                                       Receives the mouse event, the column name being displayed, and the feature data object.   
-   * - `row_name_hover_function(event, d)`: Override to implement actions when a row name (display name) is hovered.
+   * - `col_name_hover_function(event, d)`: Override to implement actions when a row name (display name) is hovered.
    *                                        Receives the mouse event and the display column name (d).
-   * - `row_name_click_function(event, d)`: Override to implement actions when a row name (display name) is clicked.
+   * - `col_name_click_function(event, d)`: Override to implement actions when a row name (display name) is clicked.
    *                                        Receives the mouse event and the display column name (d).
    */
 
-  constructor(sgb, name, h, top, config, display_columns, display_names, contig_column) {
-    super(sgb, name, h, top, config);
+  constructor(sgb, name, h, top, config, display_columns, display_names, contig_column, start_column, end_column, id_column) {
+    super(sgb, name, h, top, config, contig_column, start_column, end_column, id_column);
     const self = this;
     self.display_columns = display_columns;
     self.display_names = display_names;
-    self.contig_column = contig_column;
     self.block_h = (self.h * 0.9 / self.display_columns.length) * 0.9;
     self.block_ys = Array.from({ length: display_columns.length }, (_, i) => self.h * 0.05 + self.block_h * (1 / 0.9) * i);
-    self.row_name_click = null;
+    self.col_name_click = null;
 
     self.divergingColorScale = d3.scaleDiverging();
 
@@ -611,6 +449,8 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       .on('click', (event) => self.handleClick(event));
 
     self.pixelMap = null; // Will store our pre-calculated pixel data.
+
+    self.display_column_names();
   
   }
 
@@ -620,10 +460,10 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
   display_column_names() {
     const self = this;
-    self.row_title_div.selectAll('.heatmap_row_name')
+    self.row_title_div.selectAll('.heatmap_col_name')
       .data(self.display_columns)
       .join('div') // Use .join('div') for creating and updating divs
-      .attr('class', 'heatmap_row_name')
+      .attr('class', 'heatmap_col_name')
       .style('position', 'absolute')
       .style('top', (d, i) => `${self.block_ys[i] - self.block_h * (0.05 / 0.9)}px`)
       .style('left', '0px')
@@ -638,7 +478,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       .html((d, i) => `<span style="font-size: ${Math.min(self.block_h, 16)}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; width: 100%;">${self.display_names[i]}</span>`)
       .on('mouseover', function (event, d) {
         d3.select(this).style('background-color', 'lightgray'); // Example hover effect
-        if (self.row_name_hover_function) self.row_name_hover_function(event, d);
+        if (self.col_name_hover_function) self.col_name_hover_function(event, d);
       })
       .on('mouseout', function () {
         d3.select(this).style('background-color', (d) => d === self.focal_row ? "FAA" : self.display_columns.indexOf(d) % 2 == 0 ? '#DDD' : '#FFF');
@@ -646,35 +486,36 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       })
       .on('click', function(event, d) {
         self.focal_row = d;
-        self.row_title_div.selectAll('.heatmap_row_name').style('background-color', (data, index) => {
+        self.row_title_div.selectAll('.heatmap_col_name').style('background-color', (data, index) => {
           return data === self.focal_row ? '#FAA' : index % 2 === 0 ? '#DDD' : '#FFF';
         });
-        if (self.row_name_click_function) self.row_name_click_function(event, d);
+        if (self.col_name_click_function) self.col_name_click_function(event, d);
         event.stopPropagation();
       });
 
     self.focal_row = self.display_columns[0];
     // Set initial background color for the focused row
-    self.row_title_div.selectAll('.heatmap_row_name').style('background-color', (d) =>
-      d === self.focal_row ? '#FAA' : self.row_title_div.select(`.heatmap_row_name:nth-child(${self.display_columns.indexOf(d) + 1})`).style('background-color')
+    self.row_title_div.selectAll('.heatmap_col_name').style('background-color', (d) =>
+      d === self.focal_row ? '#FAA' : self.row_title_div.select(`.heatmap_col_name:nth-child(${self.display_columns.indexOf(d) + 1})`).style('background-color')
     );
   }
 
-  row_name_click_function(event, row_name) {
+  col_name_click_function(event, col_name) {
     // default function for clicking a row name (see make_summary_sidebar below)
-    this.make_summary_sidebar(row_name);
+    this.make_summary_sidebar(col_name);
     // optional additional function to add behavior on click
-    if (this.row_name_click) this.row_name_click();
+    if (this.col_name_click) this.col_name_click();
   }
 
-  make_summary_sidebar(row_name) {
+  make_summary_sidebar(col_name) {
+    // default sidebar function, assumes data has a 'name' column for features
     const self = this;
 
-    const genesWithScores = self.data
-      .filter(row => row[row_name] !== null && !isNaN(row[row_name]) && (row.locusId in self.sgb.search_dict)) 
+    const genesWithScores = self.data.data
+      .filter(row => row[col_name] !== null && !isNaN(row[col_name])) 
       .map(row => ({
-        gene: self.sgb.search_dict[row.locusId].gene_data,
-        score: row[row_name]
+        gene: row,
+        score: row[col_name]
       }))
       .sort((a, b) => b.score - a.score); // Sort by score descending
 
@@ -712,7 +553,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
     pm_contentDiv.append('div')
       .attr('class', 'gene-table')
-      .html(`<h3 style="font-size: 14px; margin: 8px 0;">${row_name}</h3>`)
+      .html(`<h3 style="font-size: 14px; margin: 8px 0;">${col_name}</h3>`)
     
     const table = pm_contentDiv.select('.gene-table').append('table')
       .style('width', '350px') 
@@ -761,9 +602,9 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
         .attr('class', `gene-row-${isTop ? 'top' : 'bottom'}`)
         .style('cursor', 'pointer')
         .style('border-bottom', '1px solid #ddd')
-        .attr('data-locus-id', d => d.gene.locusId)
+        .attr('data-locus-id', d => d.gene[self.id_col])
         .on('click', function(e, d) {
-          self.sgb.display_gene(d.gene.locusId);
+          self.sgb.display_feature(d.gene[self.contig_col], d.gene[self.start_col], d.gene[self.end_col]);
         });
 
   
@@ -772,7 +613,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
         .style('border-right', '1px solid #ddd')
         .style('font-size', '12px')
         .style('width', '30%') // Match column width
-        .html(d => (d.gene.name == 'NA') ? d.gene.locusId : d.gene.name || d.gene.locusId);
+        .html(d => (d.gene.name == 'NA') ? d.gene[self.id_col] : d.gene.name || d.gene[self.id_col]);
   
       rows.append('td')
         .style('padding', '4px')
@@ -841,13 +682,9 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
     function updateScatterplot() {
       // Set nulls to 0 in both columns
-      const plotData = self.data.contig_filt.filter(row =>
-        //row[row_name] !== null && !isNaN(row[row_name]) &&
-        //row[yAxisColumn] !== null && !isNaN(row[yAxisColumn]) &&
-        (row.locusId in self.sgb.search_dict)
-      ).map(row => ({
-        gene: self.sgb.search_dict[row.locusId].gene_data,
-        x: row[row_name] || 0,
+      const plotData = self.data.contig_filt.map(row => ({
+        gene: row,
+        x: row[col_name] || 0,
         y: row[yAxisColumn] || 0
       }));
 
@@ -881,7 +718,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
         .attr('r', 3)
         .attr('fill', '#333')
         .on('click', (event, d) => {
-          self.sgb.display_gene(d.gene.locusId);
+          self.sgb.display_feature(d.gene[self.contig_col], d.gene[self.start_col], d.gene[self.end_col]);
         })
         .on('mouseover', function(event, d) {
           d3.select(this)
@@ -900,7 +737,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
           .attr("y", height + margin.bottom)
           .style("text-anchor", "middle")
           .style("font-size", "10px")
-          .text(row_name);
+          .text(col_name);
 
         svg.append("text")
           .attr("transform", "rotate(-90)")
@@ -928,7 +765,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
     for (let dataIndex = 0; dataIndex < self.data.filt_data.length; dataIndex++) {
       const d = self.data.filt_data[dataIndex];
-      const [left, right] = self.sgb.get_feature_pixel_position(d.begin, d.end);
+      const [left, right] = self.sgb.get_feature_pixel_position(d[self.start_col], d[self.end_col]);
 
       for (let colIndex = 0; colIndex < self.display_columns.length; colIndex++) {
         if (d[self.display_columns[colIndex]]) {
@@ -968,7 +805,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
       if (pixelInfo) {
         const d = self.data.filt_data[pixelInfo.dataIndex];
-        const [left, right] = self.sgb.get_feature_pixel_position(d.begin, d.end);
+        const [left, right] = self.sgb.get_feature_pixel_position(d[self.start_col], d[self.end_col]);
         const y = self.block_ys[pixelInfo.colIndex];
 
         self.highlightRect
@@ -981,8 +818,8 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
         if (self.hover_function) self.hover_function(event, column, d);
 
         // keeping track of who was hovered and giving the option of a callback outside the track
-        self.hoveredIndex = d.sgb_index;
-        if (self.callback) self.callback('mouseover', d.sgb_index, column);
+        self.hoveredPixelInfo = pixelInfo;
+        if (self.callback) self.callback('mouseover', {datum: d, column: column, pixelInfo: pixelInfo, track: self});
 
         return; // exit early as we found a hit
       }
@@ -993,9 +830,10 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
   }
 
   handleMouseout() {
+    const self = this;
     this.highlightRect.style('visibility', 'hidden');
     this.sgb.hide_tooltip();
-    if (this.callback) this.callback('mouseout', this.hoveredIndex);
+    if (this.callback) this.callback('mouseout', {hoveredPixelInfo: self.hoveredPixelInfo, track: self});
   }
 
   handleClick(event) {
@@ -1009,13 +847,14 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
         const d = self.data.filt_data[pixelInfo.dataIndex];
         const column = self.display_columns[pixelInfo.colIndex];
         if (self.click_function) self.click_function(event, column, d);
-        if (self.callback) self.callback('click', d.sgb_index, column);
+        if (self.callback) self.callback('click', {datum: d, column: column, pixelInfo: pixelInfo, track: self});
       }
     }
   }
 
   hover_function(e, column, gene_object) {
-    // default hover function
+    // default hover function, assumes columns for locusId, name, desc
+    // may want to overwrite in extending classes
     const self = this;
     if (gene_object) {
       const { locusId, name, desc } = gene_object;
@@ -1072,9 +911,10 @@ class quantitativeYaxesTrack extends baseTrack {
    *                                       a data attribute and some info about the element's position
    */
 
-  constructor(sgb, name, h, top, column, config) {
+  constructor(sgb, name, h, top, column, config, contig_column) {
     super(sgb, name, h, top, config);
     const self = this;
+    self.contig_col = contig_column;
     self.column = column;
     self.config = config;
     self.title = config.title ?? self.column;
@@ -1105,6 +945,33 @@ class quantitativeYaxesTrack extends baseTrack {
           .attr('y2', d => self.yscale(d))
           .attr('stroke', 'black')
           .attr('stroke-width', d => (d == self.yticks[0] || d == self.yticks[self.yticks.length-1]) ? 1 : 0.25)
+
+      const yAxis = d3.axisLeft(self.yscale)
+        .tickValues(self.yticks)
+        .tickSize(0)
+        
+      if (self.tick_formatter) yAxis.tickFormat(self.tick_formatter);
+
+      self.axis_elements = self.svg.append('g');
+
+      // hacky background for tick labels
+      self.axis_elements.append('rect')
+        .attr('x', self.sgb.w)
+        .attr('width', self.left_buf)
+        .attr('y', 0)
+        .attr('height', self.h)
+        .attr('fill', 'white')
+  
+      self.axis_elements.append('g')
+        .attr('class', 'yaxis')
+        .attr("transform", `translate(${self.sgb.w+self.left_buf},0)`)
+        .call(yAxis);
+              
+      self.axis_elements.append('text')
+        .attr('class', 'countPlotTitle')
+        .attr("y", self.yscale(self.yticks[self.yticks.length-1])-5)
+        .attr("x", self.sgb.display_w/2)
+        .html(self.title);
     }
 
     self.canvas_div = self.div.append('div')
@@ -1167,6 +1034,7 @@ class quantitativeYaxesTrack extends baseTrack {
 
       if (self.axis_elements) self.axis_elements.remove();
       self.axis_elements = self.svg.append('g');
+      // hacky background for tick labels
       self.axis_elements.append('rect')
         .attr('x', self.sgb.w)
         .attr('width', self.left_buf)
@@ -1267,10 +1135,9 @@ class quantitativePointTrack extends quantitativeYaxesTrack {
    *                                       pixelInfo is defined in the pixelMap of the child element, but typically has
    *                                       a data attribute and some info about the element's position
    */
-  constructor(sgb, name, h, top, column, config, contig_col, pos_column) {
-    super(sgb, name, h, top, column, config)
-    this.contig_col = contig_col;
-    this.pos_column = pos_column;
+  constructor(sgb, name, h, top, column, config, contig_column, pos_column) {
+    super(sgb, name, h, top, column, config, contig_column)
+    this.pos_col = pos_column;
     this.pointRadius = config.pointRadius || 2;
     this.highlight_element = this.svg.append('circle')
       .attr('r', this.pointRadius * 1.5)
@@ -1282,11 +1149,11 @@ class quantitativePointTrack extends quantitativeYaxesTrack {
   drawData() {
     const self = this;
     self.data.filt_data.forEach(d => {
-      const x = self.sgb.get_coordinate_pixel_position(d[self.pos_column]);
+      const x = self.sgb.get_coordinate_pixel_position(d[self.pos_col]);
       if (x >= 0 && x <= self.sgb.display_w) {
         const y = self.yscale(d[self.column]);
         self.ctx.fillStyle = (self.color_func) ? self.color_func(d, self.column, self.title) : "black";
-        self.ctx.beginPath();
+        self.ctx.startPath();
         self.ctx.arc(x, y, self.pointRadius, 0, 2 * Math.PI);
         self.ctx.fill();
         // Add to pixel map
@@ -1311,7 +1178,7 @@ class quantitativePointTrack extends quantitativeYaxesTrack {
     const self = this;
     this.highlight_element
       .style('visibility', 'visible')
-      .attr('cx', self.sgb.get_coordinate_pixel_position(d[self.pos_column]))
+      .attr('cx', self.sgb.get_coordinate_pixel_position(d[self.pos_col]))
       .attr('cy', self.yscale(d[self.column]));
   }
 
@@ -1343,7 +1210,7 @@ class quantitativeLineTrack extends quantitativeYaxesTrack {
    * @param {number} top - The top position of the track in pixels.
    * @param {object} [config={}] - An optional configuration object for the track.
    * @param {string} contig_col - The column name in the data specifying the contig/chromosome ID.
-   * @param {string} begin_column - The column name in the data specifying the start genomic position of the line.
+   * @param {string} start_column - The column name in the data specifying the start genomic position of the line.
    * @param {string} end_column - The column name in the data specifying the end genomic position of the line.
    *
    * @param {object} [config] - Configuration object for the quantitativeLineTrack.
@@ -1360,11 +1227,10 @@ class quantitativeLineTrack extends quantitativeYaxesTrack {
    *                                       pixelInfo is defined in the pixelMap of the child element, but typically has
    *                                       a data attribute and some info about the element's position
    */
-  constructor(sgb, name, h, top, config, contig_col, begin_column, end_column) {
-    super(sgb, name, h, top, config)
-    this.contig_col = contig_col;
-    this.begin_column = begin_column;
-    this.end_column = end_column;
+  constructor(sgb, name, h, top, config, contig_column, start_column, end_column, id_column) {
+    super(sgb, name, h, top, config, contig_column)
+    this.start_col = start_column;
+    this.end_col = end_column;
     this.lineWidth = config.lineWidth ?? 2;
 
     this.highlight_element = this.svg.append('line') // single line for highlighting
@@ -1376,9 +1242,9 @@ class quantitativeLineTrack extends quantitativeYaxesTrack {
   drawData(){
     const self = this;
     self.data.filt_data.forEach((d) => {
-      const [x1, x2] = self.sgb.get_feature_pixel_position(d[self.begin_column], d[self.end_column]);
-      //const x2 = self.sgb.get_coordinate_pixel_position(d[self.end_column]);
-      //console.log(d[self.begin_column], d[self.end_column], x1, x2, self.sgb.display_w);
+      const [x1, x2] = self.sgb.get_feature_pixel_position(d[self.start_col], d[self.end_col]);
+      //const x2 = self.sgb.get_coordinate_pixel_position(d[self.end_col]);
+      //console.log(d[self.start_col], d[self.end_col], x1, x2, self.sgb.display_w);
       // Only draw the line if *any* part of it is visible
       if ((x1 <= self.sgb.display_w && x1 >= 0) 
             || (x2 <= self.sgb.display_w && x2 >= 0) 
@@ -1419,7 +1285,7 @@ class quantitativeLineTrack extends quantitativeYaxesTrack {
 
   highlight_datum(d) {
     const self = this;
-    const [x1, x2] = self.sgb.get_feature_pixel_position(d[self.begin_column], d[self.end_column]);
+    const [x1, x2] = self.sgb.get_feature_pixel_position(d[self.start_col], d[self.end_col]);
     const y = self.yscale(d[self.column]);
     this.highlight_element
       .style('visibility', 'visible')
@@ -1440,10 +1306,10 @@ class quantitativeLineTrack extends quantitativeYaxesTrack {
     const d = pixelInfo.data;
     const column = pixelInfo.column;
     this.sgb.tooltip.selectAll('*').remove();
-    this.sgb.tooltip.html(`${d[this.begin_column]}-${d[this.end_column]}: ${column} = ${d[column]}`);
+    this.sgb.tooltip.html(`${d[this.start_col]}-${d[this.end_col]}: ${column} = ${d[column]}`);
     this.sgb.show_tooltip(event.pageX, event.pageY);
   }
 
 }
 
-export { baseFeatureTrack, geneTrack, gffTrack, gbTrack, geneTableTrack, quantitativeFeatureTrack, quantitativeYaxesTrack, quantitativePointTrack, quantitativeLineTrack };
+export { baseFeatureTrack, geneTrack, quantitativeFeatureTrack, quantitativeYaxesTrack, quantitativePointTrack, quantitativeLineTrack };

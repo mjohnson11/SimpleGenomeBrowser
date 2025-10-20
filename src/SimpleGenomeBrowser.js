@@ -27,6 +27,7 @@ class SimpleGenomeBrowser {
 
     // Core data holder
     this.data = {};
+    this.data_map = {}; // maps from named datasets to tracks
 
     // Required arguments
     this.orgId = orgId;
@@ -251,15 +252,15 @@ class SimpleGenomeBrowser {
     self.search_div = self.div.append('div')
       .attr('id', 'search_div')
       .style('position', 'absolute')
-      .style('left', 0)
+      .style('left', 50)
       .style('top', self.layout.top)
 
     self.gene_search = self.search_div.append('input')
-      .attr('class', "gene_searchbar")
       .attr('id', 'main_searchbar')
       .attr('type', 'search')
       .attr('spellcheck', 'false')
       .attr('autocomplete', 'off')
+      .style('width', 200)
       .on('focus', function () { d3.select(this).style('color', '#333')})
       .on('blur', function() { d3.select(this).style('color', '#333')});
   
@@ -274,8 +275,10 @@ class SimpleGenomeBrowser {
                 selection: (event) => {
                     const selection = event.detail.selection.value;
                     self.autoCompleteEl.input.value = '';
-                    self.search_click(selection.split(' ')[0]);
-                    document.getElementById('gene_searchbar').blur(); //removes focus so the cursor leaves
+                    const search_result = self.search_dict[selection.split(' ')[0]];
+                    self.display_feature(search_result.contig, search_result.start, search_result.end);
+                    if (search_result.track.click_function) search_result.track.click_function(search_result.datum);
+                    document.getElementById('main_searchbar').blur(); //removes focus so the cursor leaves
                 }
             }
         }
@@ -395,7 +398,6 @@ class SimpleGenomeBrowser {
         const end_px = Math.max(drag_start_pos, effective_mouse_pos);
         const start_coord = Math.floor(self.x_scale.invert(start_px));
         const end_coord = Math.ceil(self.x_scale.invert(end_px));
-        console.log(start_coord, end_coord, start_px, end_px);
         self.display_region({ domain: [start_coord, end_coord] });
         drag_rect.remove();
         drag_start_pos = null;
@@ -611,20 +613,8 @@ class SimpleGenomeBrowser {
     self.x_scale.domain(self.domain);
     self.x_ax_element.call(self.x_axis);
 
-    self.data_map = {}; // maps from named datasets to tracks
-    // really only needs to be updated when new tracks are added but hey...
-    for (let t of self.tracks) {
-      // filtering for tracks set to display
-      console.log(t.name, t.expanded, self.domain_wid, t.load_threshold, t.currently_force_loading);
-      if (t.expanded) { //  ideally we could hold back from loading data for ones with force load happening, but not right now
-        if (t.data.name in self.data_map) {
-          self.data_map[t.data.name].push(t);
-        } else {
-          self.data_map[t.data.name] = [t];
-        }
-      }
-    }
-    console.log(self.data_map);
+    
+    //console.log(self.data_map);
     // load datasets and display data
     for (let d of Object.keys(self.data_map)) {
       self.data[d].update_data().then(() => {
@@ -632,6 +622,15 @@ class SimpleGenomeBrowser {
           t.display_region();
         }
       });
+    }
+  }
+
+  add_track(track) {
+    this.tracks.push(track);
+    if (track.data_name in this.data_map) {
+      this.data_map[track.data_name].push(track);
+    } else {
+      this.data_map[track.data_name] = [track];
     }
   }
 
@@ -799,23 +798,13 @@ class SimpleGenomeBrowser {
     }
   }
 
-  search_click(selection) {
-    this.display_gene(selection);
-    search_result.track.click_function(row);
-    this.show_sidebar();
-  }
 
-  display_gene(selection) {
-    const search_result = this.search_dict[selection];
-    if ('callback' in search_result) {
-      search_result.callback(search_result);
-    }
-    const row = search_result.gene_data;
-    const size = row['end']-row['begin'];
-    const left = row['begin'] - size;
-    const right = row['end'] + size;
+  display_feature(contig, start, end) {
+    const size = end-start;
+    const left = start - size*2;
+    const right = end + size*2;
     this.display_region({
-      'contig': row[search_result.contig_col],
+      'contig': contig,
       'domain': [left, right]
     });
   }
@@ -874,7 +863,7 @@ class baseData {
     const self = this;
     self.region_start = self.sgb.circular_coordinate(self.sgb.expanded_domain[0]);
     self.region_end = self.sgb.circular_coordinate(self.sgb.expanded_domain[1]);
-    self.filt_data = self.contig_filt.filter((d) => self.filter_one_feature_by_region(d.begin, d.end));
+    self.filt_data = self.contig_filt.filter((d) => self.filter_one_feature_by_region(d[self.start_col], d[self.end_col]));
   }
 }
 
@@ -899,6 +888,7 @@ class staticFeatureData extends baseData {
   constructor(sgb, name, data, config) {
     super(sgb, name);
     this.data = data;
+
     this.contig_col = config.contig_col ?? 'scaffoldId';
     this.start_col = config.start_col ?? 'begin';
     this.end_col = config.end_col ?? 'end';
