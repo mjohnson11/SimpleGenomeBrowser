@@ -1,6 +1,6 @@
 {
   "name": "simple-genome-browser",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A simple extensible genome browser for small genomes, built with d3",
   "main": "src/SimpleGenomeBrowser.js",
   "module": "src/SimpleGenomeBrowser.js",
