@@ -72,3 +72,7 @@
 .sgb_list_selected {
   background-color: #FF8888 !important;
 }
+
+button.active {
+  background-color: #FF8888;
+}

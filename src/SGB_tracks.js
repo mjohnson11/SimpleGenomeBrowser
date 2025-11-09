@@ -463,6 +463,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
   constructor(sgb, name, config, full_column_config, contig_column, start_column, end_column, id_column) {
     super(sgb, name, config, contig_column, start_column, end_column, id_column);
     const self = this;
+
     // Special case for inputting a simple list of column names
     if (Array.isArray(full_column_config) && (typeof full_column_config[0] === 'string')) {
       self.full_column_config = full_column_config.map(col_name => ({ name: col_name, column: col_name }));
@@ -482,6 +483,8 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       .attr('fill', 'rgba(255, 0, 0, 0.5)')
       .style('visibility', 'hidden');
 
+    self.active_sidebar_panel = config.active_sidebar_panel || 'gene_hits';
+
     self.svg
       .on('mousemove', (event) => self.handleMousemove(event))
       .on('mouseout', () => self.handleMouseout())
@@ -489,7 +492,6 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
     self.reset_display();
 
-    
     self.add_settings_button(() => {
       open_column_selector({
         column_config: self.column_config,
@@ -614,6 +616,15 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
     // default sidebar function, assumes data has a 'name' column for features
     const self = this;
 
+    function show_panel(panel_name) {
+      const p = sidebar_panels[panel_name];
+      self.active_sidebar_panel = panel_name;
+      d3.select(p.button.node().parentNode).selectAll('button').classed('active', false);
+      d3.select(p.button.node()).classed('active', true);
+      sidebar_div.selectAll('.panel_content').style('display', 'none');
+      sidebar_div.selectAll(`.${p.class}`).style('display', 'block');
+    }
+
     const sorted = self.data.data
       .params({c: col.column})
       .orderby(aq.desc((d, $) => d[$.c]));
@@ -626,27 +637,18 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
     // Add tabs
     const tabs = sidebar_div.append('div').attr('class', 'tabs');
-    tabs.append('button')
-      .text('+/- Genes')
-      .classed('active', true)
-      .on('click', function() {
-        d3.select(this.parentNode).selectAll('button').classed('active', false);
-        d3.select(this).classed('active', true);
-        sidebar_div.selectAll('.gene_compare_content').style('display', 'none');
-        sidebar_div.selectAll('.gene_pm_content').style('display', 'block');
-      });
-
-    tabs.append('button')
-      .text('Compare')
-      .on('click', function() {
-        d3.select(this.parentNode).selectAll('button').classed('active', false);
-        d3.select(this).classed('active', true);
-        sidebar_div.selectAll('.gene_pm_content').style('display', 'none');
-        sidebar_div.selectAll('.gene_compare_content').style('display', 'block');
-      });
+    const sidebar_panels = {gene_hits: {class: 'gene_pm_content', title: '+/- Genes'}, gene_compare: {class: 'gene_compare_content', title: 'Compare'}};
+    for (let sp of Object.keys(sidebar_panels)) {
+      sidebar_panels[sp].button = tabs.append('button')
+        .text(sidebar_panels[sp].title)
+        .on('click', function() {
+          show_panel(sp, this);
+        });
+    }
 
     // Making plus/minus gene display
-    const pm_contentDiv = sidebar_div.append('div').attr('class', 'gene_pm_content');
+    const pm_contentDiv = sidebar_div.append('div')
+      .attr('class', 'panel_content gene_pm_content');
 
     pm_contentDiv.append('div')
       .attr('class', 'gene-table')
@@ -739,16 +741,16 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
     createRows(topGenes, true);
     createRows(bottomGenes.reverse(), false);
 
-
     // Now making scatterplot div, which will not be displayed at first
     const compare_contentDiv = sidebar_div.append('div')
-      .attr('class', 'gene_compare_content')
-      .style('display', 'none');
+      .attr('class', 'panel_content gene_compare_content');
 
     // Select element for y-axis
     const select = compare_contentDiv.append('select')
       .style('margin', '10px');
 
+
+    let yAxisColumn = self.include_halfs ? col.column : self.column_config[0].column; // Default y-axis column
     select.selectAll('option')
       .data(self.column_config)
       .enter()
@@ -756,7 +758,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       .text(d => d.name)
       .attr('value', d => d.column);
 
-    let yAxisColumn = self.column_config[0].column; // Default y-axis column
+    select.property('value', yAxisColumn);
 
     select.on('change', function() {
       yAxisColumn = d3.select(this).property('value');
@@ -765,7 +767,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
     const svgWidth = 340;
     const svgHeight = 250;
-    const margin = { top: 20, right: 20, bottom: 30, left: 40 };
+    const margin = { top: 20, right: 20, bottom: 30, left: 50 };
     const width = svgWidth - margin.left - margin.right;
     const height = svgHeight - margin.top - margin.bottom;
 
@@ -780,9 +782,14 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
     function updateScatterplot() {
       // Set nulls to 0 in both columns
 
+      const half_half_plot = ((yAxisColumn == col.column) && self.include_halfs);
+
+      const xcol = half_half_plot ? col.column+'_half1' : col.column;
+      const ycol = half_half_plot ? col.column+'_half2' : yAxisColumn;
+
       const plotData = self.data.data
-        .select([col.column, yAxisColumn, self.contig_col, self.start_col, self.end_col, self.id_col, 'name', 'desc'])
-        .rename({[col.column]: 'x', [yAxisColumn]: 'y'})
+        .select([xcol, ycol, self.contig_col, self.start_col, self.end_col, self.id_col, 'name', 'desc'])
+        .rename({[xcol]: 'x', [ycol]: 'y'})
         .objects();
 
       // Update scales
@@ -833,8 +840,8 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
           .attr("x", width / 2)
           .attr("y", height + margin.bottom)
           .style("text-anchor", "middle")
-          .style("font-size", "10px")
-          .text(col.name);
+          .style("font-size", "14px")
+          .text(half_half_plot ? col.name + " (half1)" : col.name);
 
         svg.append("text")
           .attr("transform", "rotate(-90)")
@@ -842,13 +849,14 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
           .attr("x",0 - (height / 2))
           .attr("dy", "1em")
           .style("text-anchor", "middle")
-          .style("font-size", "10px")
-          .text(yAxisColumn);
+          .style("font-size", "14px")
+          .text(half_half_plot ? col.name + " (half2)" : yAxisColumn);
     }
     updateScatterplot();
 
     self.sgb.sidebar_content.node().scrollTop = 0;
     self.sgb.show_sidebar(null, 380); // force a 380px sidebar
+    show_panel(self.active_sidebar_panel);
   }
 
   load_region() {
