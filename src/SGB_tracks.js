@@ -621,8 +621,8 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       self.active_sidebar_panel = panel_name;
       d3.select(p.button.node().parentNode).selectAll('button').classed('active', false);
       d3.select(p.button.node()).classed('active', true);
-      sidebar_div.selectAll('.panel_content').style('display', 'none');
-      sidebar_div.selectAll(`.${p.class}`).style('display', 'block');
+      self.sgb.sidebar_div.selectAll('.panel_content').style('display', 'none');
+      self.sgb.sidebar_div.selectAll(`.${p.class}`).style('display', 'block');
     }
 
     const sorted = self.data.data
@@ -632,12 +632,11 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
     const topGenes = sorted.slice(0,10).objects().map(row => ({ gene: row, score: row[col.column] }));
     const bottomGenes = sorted.slice(-10).objects().map(row => ({ gene: row, score: row[col.column] }));
 
-    self.sgb.sidebar_content.selectAll('*').remove();
-    const sidebar_div = self.sgb.sidebar_content.append('div').attr('class', 'gene-info')
+    self.sgb.sidebar_div.selectAll('*').remove();
 
     // Add tabs
-    const tabs = sidebar_div.append('div').attr('class', 'tabs');
-    const sidebar_panels = {gene_hits: {class: 'gene_pm_content', title: '+/- Genes'}, gene_compare: {class: 'gene_compare_content', title: 'Compare'}};
+    const tabs = self.sgb.sidebar_div.append('div').attr('class', 'tabs');
+    const sidebar_panels = {gene_hits: {class: 'gene_pm_content', title: 'Top Gene Hits'}, gene_compare: {class: 'gene_compare_content', title: 'Scatterplots'}};
     for (let sp of Object.keys(sidebar_panels)) {
       sidebar_panels[sp].button = tabs.append('button')
         .text(sidebar_panels[sp].title)
@@ -647,7 +646,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
     }
 
     // Making plus/minus gene display
-    const pm_contentDiv = sidebar_div.append('div')
+    const pm_contentDiv = self.sgb.sidebar_div.append('div')
       .attr('class', 'panel_content gene_pm_content');
 
     pm_contentDiv.append('div')
@@ -666,7 +665,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       .style('border-bottom', '2px solid #ddd');
   
     headerRow.selectAll('th')
-      .data(['Name', 'Description', 'Score'])
+      .data(['Name', 'Description', 'Score', 'T-value'])
       .enter()
       .append('th')
       .style('padding', '4px')
@@ -742,7 +741,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
     createRows(bottomGenes.reverse(), false);
 
     // Now making scatterplot div, which will not be displayed at first
-    const compare_contentDiv = sidebar_div.append('div')
+    const compare_contentDiv = self.sgb.sidebar_div.append('div')
       .attr('class', 'panel_content gene_compare_content');
 
     // Select element for y-axis
@@ -1034,6 +1033,8 @@ class quantitativeYaxesTrack extends baseTrack {
     self.ytick_formatter = config.ytick_formatter ?? null;
     self.clip = config.clip ?? false;
     self.log_y = config.log_y ?? false;
+    self.h = config.h ?? 100;
+    self.update_track_height(self.h);
     self.h_buf = config.h_buf ?? 0.1;
     self.left_buf = config.left_buf ?? 60;
 
@@ -1244,7 +1245,7 @@ class quantitativePointTrack extends quantitativeYaxesTrack {
    *                                       a data attribute and some info about the element's position
    */
   constructor(sgb, name, column, config, contig_column, pos_column) {
-    super(sgb, name, column, config, contig_column)
+    super(sgb, name, column, config, contig_column);
     this.pos_col = pos_column;
     this.pointRadius = config.pointRadius || 2;
     this.highlight_element = this.svg.append('circle')
@@ -1261,7 +1262,7 @@ class quantitativePointTrack extends quantitativeYaxesTrack {
       if (x >= 0 && x <= self.sgb.display_w) {
         const y = self.yscale(d[self.column]);
         self.ctx.fillStyle = (self.color_func) ? self.color_func(d, self.column, self.title) : "black";
-        self.ctx.startPath();
+        self.ctx.beginPath();
         self.ctx.arc(x, y, self.pointRadius, 0, 2 * Math.PI);
         self.ctx.fill();
         // Add to pixel map
@@ -1335,8 +1336,8 @@ class quantitativeLineTrack extends quantitativeYaxesTrack {
    *                                       pixelInfo is defined in the pixelMap of the child element, but typically has
    *                                       a data attribute and some info about the element's position
    */
-  constructor(sgb, name, config, contig_column, start_column, end_column, id_column) {
-    super(sgb, name, config, contig_column)
+  constructor(sgb, name, column, config, contig_column, start_column, end_column, id_column) {
+    super(sgb, name, column, config, contig_column)
     this.start_col = start_column;
     this.end_col = end_column;
     this.lineWidth = config.lineWidth ?? 2;

@@ -683,12 +683,15 @@ class SimpleGenomeBrowser {
       .style('right', 0)
       .style('z-index', '12')
       .style('text-align', 'left')
-      
-      
+
     this.sidebar_content = this.sidebar.append('div')
       .attr('class', 'sidebar_content_div')
       .style('max-height', self.h-self.layout.top+15)
       .style('overflow-y', 'scroll')
+     
+    this.sidebar_div = this.sidebar_content
+      .append('div')
+      .attr('class', 'sidebar-content-inner-div')
       .html('<h2>Click on a gene to see info here</h2>');
 
     this.sidebar_button = this.sidebar.append('button')
@@ -706,6 +709,8 @@ class SimpleGenomeBrowser {
     this.sidebar_content
       .style('margin', 10)
       .style('visibility', 'hidden');
+
+    
   }
 
   show_sidebar(html=null, sidebar_width=250) {
@@ -757,19 +762,15 @@ class SimpleGenomeBrowser {
         ['Strand:', strand]
       ]
       if (pseudo) sidebar_info_rows.push(['(Pseudogene)', '']);
-    
-      this.sidebar_content.selectAll('*').remove();
-    
-      const sidebar_div = this.sidebar_content.append('div').attr('class', 'gene-info')
 
-      sidebar_div.selectAll('.sidebar_info_row')
+      this.sidebar_div.selectAll('.sidebar_info_row')
         .data(sidebar_info_rows)
         .enter()
         .append('p')
           .attr('class', 'sidebar_info_row')
           .html((d) => `<strong>${d[0]}</strong> ${d[1]}`)
     
-      sidebar_div.append('p').append('button')
+      this.sidebar_div.append('p').append('button')
         .html('Copy DNA Sequence')
         .on('click', function() {
           if (String(strand)=='+'){
@@ -783,17 +784,17 @@ class SimpleGenomeBrowser {
       if (this.aa_seqs != {}) {
         if (locusId in this.aa_seqs) {
           const aa_seq = this.aa_seqs[locusId];
-          sidebar_div.append('p').append('button')
+          this.sidebar_div.append('p').append('button')
             .html('Copy AA Sequence')
             .on('click', function() {
               copy_sequence(aa_seq, this);
             })
-          sidebar_div.append('p').append('a')
+          this.sidebar_div.append('p').append('a')
             .attr('href', `https://fast.genomics.lbl.gov/cgi/findHomologs.cgi?seqDesc=${locusId}&seq=${aa_seq}`)
             .attr('target', '_blank')
             .html('Find homologs with fast.genomics')
         } else {
-          sidebar_div.append('p').html('No AA sequence available');
+          this.sidebar_div.append('p').html('No AA sequence available');
         }
       }
       this.sidebar_content.node().scrollTop = 0;
@@ -907,18 +908,31 @@ class serverPointData extends baseData {
 
   constructor(sgb, name, fetch_path, fetch_json, config) {
     super(sgb, name);
-    this.data = data;
+    this.data = {};
     this.contig_col = config.contig_col ?? 'scaffoldId';
     this.pos_col = config.pos_col ?? 'pos';
     // these will be modified before a server call
     this.fetch_path = fetch_path;
     this.fetch_json = fetch_json;
+    this.fetch_json.filter_type = 'pos';
+    this.fetch_json.contig_col = this.contig_col;
+    this.base_columns = [
+      {name: this.contig_col, dtype: 'str'},
+      {name: this.pos_col, dtype: 'int'},
+    ]
   }
 
   async update_data() {
-    [this.fetch_json.low, this.fetch_json.high] = this.sgb.expanded_domain;
+    // this.columns must be set before calling this function
+    let [low, high] = this.sgb.expanded_domain;
+    this.fetch_json.low = parseInt(low);
+    this.fetch_json.high = parseInt(high);
     this.fetch_json.contig = this.sgb.contig;
     this.fetch_json.contig_len = this.sgb.contig_len;
+    this.fetch_json.columns = this.base_columns.slice();
+    for (let track of this.sgb.data_map[this.name]) {
+      this.fetch_json.columns.push({name: track.column, dtype: 'float'});
+    }
     return new Promise((resolve) => {
       fetch_server_data(this.fetch_path, this.fetch_json)
         .then(data => {

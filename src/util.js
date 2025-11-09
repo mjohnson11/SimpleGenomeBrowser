@@ -6,6 +6,7 @@ Sortable.mount(new MultiDrag());
 
 async function fetch_server_data(fetch_path, json_object) {
   // Retrieves data from a parquet file on the server
+  //console.log('fetching data from server:', fetch_path, json_object);
   const response = await fetch(fetch_path, {
     method: "POST",
     headers: {
@@ -27,7 +28,8 @@ async function fetch_server_data(fetch_path, json_object) {
   const buffer = await response.arrayBuffer();
   const bytes = new Uint8Array(buffer);
   const table = aq.fromArrow(bytes);
-  const data = table.objects();
+  const data = table.objects(); // TODO - consider returning the arquero table directly
+
   if ('data_log_message' in Object.keys(json_object)) {
     console.log(json_object.data_log_message, data);
   }
@@ -271,7 +273,7 @@ function data_shaper(aq_df, column_config, icols, include_halfs=true) {
   let new_cols = [];
   for (let c of column_config) {
     if (c.agg_columns) {
-      let suffixes = include_halfs ? ['', '_half1', '_half2'] : [''];
+      let suffixes = include_halfs ? ['', '_T', '_half1', '_half2'] : ['', '_T'];
       for (let suffix of suffixes) {
         let agg_col_names = c.agg_columns.map(col_name => col_name+suffix)
         new_cols.push(c.name+suffix)
@@ -283,7 +285,7 @@ function data_shaper(aq_df, column_config, icols, include_halfs=true) {
     let new_row = {};
     for (let c of column_config) {
       if (c.agg_columns) {
-        let suffixes = include_halfs ? ['', '_half1', '_half2'] : [''];
+        let suffixes = include_halfs ? ['', '_T', '_half1', '_half2'] : ['', '_T'];
         for (let suffix of suffixes) {
           let agg_cols = c.agg_columns.map(col_name => row[col_name+suffix])
           let vals = agg_cols.filter(v => v != null && !Number.isNaN(v));
@@ -299,7 +301,7 @@ function data_shaper(aq_df, column_config, icols, include_halfs=true) {
     }
     new_data.push(new_row);
   }
-
+  console.log('new_data sample:', new_data.slice(0,5), aq_df.select(use_cols).objects().slice(0,5));
   return aq_df.select(icols.concat(use_cols)).assign(aq.from(new_data));
   
   /* 
@@ -333,216 +335,3 @@ function data_shaper(aq_df, column_config, icols, include_halfs=true) {
 }
 
 export { fetch_server_data, parse_fasta, fit_text, measure_text, reverse_complement, copy_sequence, open_column_selector, data_shaper };
-
-
-/*
-function open_column_selector(options) {
-  const columns = options.columns || [];
-  const names = options.names || [];
-  const current = options.current || [];
-  const title = options.title || 'Select columns';
-  const onSave = options.onSave || function(){};
-
-  // ensure only one modal exists
-  d3.select('.sgb_column_selector_modal').remove();
-
-  const modal = d3.select('body').append('div')
-    .attr('class', 'sgb_column_selector_modal')
-    .style('position', 'fixed')
-    .style('left', 0)
-    .style('top', 0)
-    .style('width', '100%')
-    .style('height', '100%')
-    .style('background-color', 'rgba(0,0,0,0.4)')
-    .style('display', 'flex')
-    .style('align-items', 'center')
-    .style('justify-content', 'center')
-    .style('z-index', 10000);
-
-  const box = modal.append('div')
-    .attr('class', 'sgb_column_selector_box')
-    .style('width', '720px')
-    .style('height', '520px')
-    .style('background-color', 'white')
-    .style('border', '1px solid #888')
-    .style('border-radius', '6px')
-    .style('padding', '12px')
-    .style('box-sizing', 'border-box')
-    .style('display', 'flex')
-    .style('flex-direction', 'column');
-
-  box.append('h3').text(title).style('margin', '4px 0 8px 0');
-
-  const content = box.append('div')
-    .style('flex', '1')
-    .style('display', 'flex')
-    .style('gap', '8px');
-
-  // left: available columns
-  const left = content.append('div')
-    .style('flex', '1')
-    .style('border', '1px solid #ddd')
-    .style('height', 450)
-    .style('overflow', 'scroll')
-    .style('padding', '6px')
-    .style('min-width', '240px');
-
-  left.append('div').text('Available columns').style('font-weight', '600').style('margin-bottom', '6px');
-
-  const availList = left.append('div').attr('class', 'sgb_avail_list');
-
-  // right: current columns
-  const right = content.append('div')
-    .style('flex', '1')
-    .style('border', '1px solid #ddd')
-    .style('height', 450)
-    .style('overflow', 'scroll')
-    .style('padding', '6px')
-    .style('min-width', '240px');
-
-  right.append('div').text('Current columns').style('font-weight', '600').style('margin-bottom', '6px');
-
-  const currList = right.append('div').attr('class', 'sgb_curr_list');
-
-  // helper to get display name
-  const disp = (col) => {
-    const idx = columns.indexOf(col);
-    return (idx >= 0) ? names[idx] || col : col;
-  };
-
-  // state for selection
-  let lastClicked = null;
-
-  function makeAvailItems() {
-    const items = availList.selectAll('.sgb_avail_item')
-      .data(columns, d=>d)
-      .join('div')
-      .attr('class', 'sgb_avail_item')
-      .style('padding', '6px')
-      .style('border-bottom', '1px solid #f0f0f0')
-      .style('cursor', 'pointer')
-      .attr('draggable', true)
-      .style('user-select', 'none')
-      .html(d => `<div style="font-size:12px">${disp(d)}<div style="font-size:10px;color:#666">${d}</div></div>`)
-      .on('click', function(event, d) {
-        const node = d3.select(this);
-        const all = availList.selectAll('.sgb_avail_item').nodes();
-        const idx = all.indexOf(this);
-        if (event.shiftKey && lastClicked !== null) {
-          const start = Math.min(lastClicked, idx);
-          const end = Math.max(lastClicked, idx);
-          all.slice(start, end+1).forEach(n => d3.select(n).classed('selected', true).style('background-color', '#CCE5FF'));
-        } else if (event.ctrlKey || event.metaKey) {
-          const was = node.classed('selected');
-          node.classed('selected', !was).style('background-color', !was ? '#CCE5FF' : null);
-          lastClicked = idx;
-        } else {
-          // clear others
-          availList.selectAll('.sgb_avail_item').classed('selected', false).style('background-color', null);
-          node.classed('selected', true).style('background-color', '#CCE5FF');
-          lastClicked = idx;
-        }
-        event.stopPropagation();
-      })
-      .on('dragstart', function(event, d) {
-        const selected = [];
-        availList.selectAll('.sgb_avail_item.selected').each(function(sd) { selected.push(sd); });
-        // if nothing selected, use this item
-        if (selected.length === 0) selected.push(d);
-        event.dataTransfer.setData('text/plain', JSON.stringify(selected));
-        // set drag image
-        try { event.dataTransfer.setDragImage(this, 10, 10); } catch(e) {}
-      });
-  }
-
-  function makeCurrItems() {
-    const items = currList.selectAll('.sgb_curr_item')
-      .data(current, d=>d)
-      .join('div')
-      .attr('class', 'sgb_curr_item')
-      .style('padding', '6px')
-      .style('border-bottom', '1px solid #f0f0f0')
-      .style('cursor', 'pointer')
-      .style('user-select', 'none')
-      .html(d => `<div style="font-size:12px">${disp(d)}<div style="font-size:10px;color:#666">${d}</div></div>`)
-      .attr('draggable', true)
-      .on('click', function(event, d) {
-        const node = d3.select(this);
-        const all = currList.selectAll('.sgb_curr_item').nodes();
-        const idx = all.indexOf(this);
-        if (event.shiftKey && lastClicked !== null) {
-          const start = Math.min(lastClicked, idx);
-          const end = Math.max(lastClicked, idx);
-          all.slice(start, end+1).forEach(n => d3.select(n).classed('selected', true).style('background-color', '#CCE5FF'));
-        } else if (event.ctrlKey || event.metaKey) {
-          const was = node.classed('selected');
-          node.classed('selected', !was).style('background-color', !was ? '#CCE5FF' : null);
-          lastClicked = idx;
-        } else {
-          // clear others
-          currList.selectAll('.sgb_curr_item').classed('selected', false).style('background-color', null);
-          node.classed('selected', true).style('background-color', '#CCE5FF');
-          lastClicked = idx;
-        }
-        event.stopPropagation();
-      })
-      .on('dragstart', function(event, d) {
-        const selected = [];
-        currList.selectAll('.sgb_curr_item.selected').each(function(sd) { selected.push(sd); });
-        // if nothing selected, use this item
-        if (selected.length === 0) selected.push(d);
-        event.dataTransfer.setData('text/plain', JSON.stringify(selected));
-        // set drag image
-        try { event.dataTransfer.setDragImage(this, 10, 10); } catch(e) {}
-      });
-
-
-    // allow reordering by dragover/drop
-    currList.selectAll('.sgb_curr_item')
-      .on('dragover', function(event, d) {
-        event.preventDefault();
-      })
-      .on('drop', function(event, targetD) {
-        console.log('drop on', targetD);
-        event.preventDefault();
-        const payload = JSON.parse(event.dataTransfer.getData('text/plain'));
-        // remove any duplicates and build new current
-        const filtered = current.filter(c => payload.indexOf(c) === -1);
-        const insertIdx = current.indexOf(targetD);
-        const before = filtered.slice(0, insertIdx+1);
-        const after = filtered.slice(insertIdx+1);
-        current = before.concat(payload).concat(after);
-        makeCurrItems();
-      });
-  }
-
-  // allow dropping onto current list container to append
-  currList.node().addEventListener('dragover', (e) => { e.preventDefault(); });
-  currList.node().addEventListener('drop', (e) => {
-    e.preventDefault();
-    try {
-      const payload = JSON.parse(e.dataTransfer.getData('text/plain'));
-      // append unique
-      payload.forEach(p => { if (current.indexOf(p) === -1) current.push(p); });
-      makeCurrItems();
-    } catch(err) { console.log('drop parse error', err); }
-  });
-
-  // clicking empty space clears selection
-  availList.on('click', () => { availList.selectAll('.sgb_avail_item').classed('selected', false).style('background-color', null); lastClicked = null; });
-
-  // initial render
-  makeAvailItems();
-  makeCurrItems();
-
-  // buttons
-  const btnRow = box.append('div').style('display','flex').style('justify-content','flex-end').style('gap','8px').style('margin-top','8px');
-  btnRow.append('button').text('Cancel').on('click', () => { modal.remove(); });
-  btnRow.append('button').text('Clear').on('click', () => { current = []; makeCurrItems(); });
-  btnRow.append('button').text('Save').on('click', () => {
-    // call onSave with new current array
-    onSave(current.slice());
-    modal.remove();
-  });
-}
-*/
