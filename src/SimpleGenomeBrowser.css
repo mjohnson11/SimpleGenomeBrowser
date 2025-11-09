@@ -68,3 +68,7 @@
 .autoComplete_wrapper li[aria-selected="true"] {
   background-color: #FF8888;
 }
+
+.sgb_list_selected {
+  background-color: #FF8888 !important;
+}

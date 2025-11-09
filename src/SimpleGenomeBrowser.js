@@ -35,14 +35,14 @@ class SimpleGenomeBrowser {
     this.w = w;
     this.h = h;
     this.div = div;
+    this.config = config;
 
     // Optional arguments
-    this.starting_contig = config.starting_contig || null;
-    this.starting_domain = config.starting_domain || null;
-    this.fastdrag = config.fastdrag === undefined ? true : config.fastdrag;
+    this.starting_contig = this.config.starting_contig ?? null;
+    this.starting_domain = this.config.starting_domain ?? null;
 
     // layout 
-    this.layout = {
+    this.layout = this.config.layout ?? {
       'top': 45,
       'controls_h': 150,
       'x_buf': 40,
@@ -53,8 +53,8 @@ class SimpleGenomeBrowser {
     }
     this.layout.x_range = [this.layout.x_buf, w-this.layout.x_buf];
     this.midpoint = w / 2;
-    this.display_w = this.fastdrag ? w * 3 : w;
-    this.display_left = this.fastdrag ? -1 * w : 0;
+    this.display_w = w * 3;
+    this.display_left = -1 * w;
     
     // Some variables / defaults
     this.tracks = [];
@@ -121,13 +121,15 @@ class SimpleGenomeBrowser {
     const self = this;
 
     self.outer_div = self.div.append('div')
+      .attr('class', 'sgb_outer_div')
       .style('left', 0)
       .style('top', 0)
       .style('width', self.w)
       .style('height', self.h)
       .style('position', 'absolute')
       //.style('border', '2px solid black')
-      .style('overflow', 'hidden')
+      .style('overflow-x', 'hidden')
+      .style('overflow-y', 'scroll')
 
     self.contig = self.starting_contig;
     self.contig_len = self.seq_lens[self.contig];
@@ -151,6 +153,7 @@ class SimpleGenomeBrowser {
       .style('top', self.layout.top-15)
       .html('Copy DNA Sequence of Region')
       .on('click', function() {
+        // TODO: handle circular case
         copy_sequence(self.seqs[self.contig].slice(self.domain[0]-1, self.domain[1]), this)
       })
 
@@ -798,7 +801,6 @@ class SimpleGenomeBrowser {
     }
   }
 
-
   display_feature(contig, start, end) {
     const size = end-start;
     const left = start - size*2;
@@ -831,31 +833,23 @@ class baseData {
   filter_by_contig() {
     const self = this;
     const chromo_column = self.contig_col ?? 'scaffoldId';
-    self.contig_filt = self.data.filter((d) => d[chromo_column] == self.sgb.contig);
-  }
-
-  filter_one_point_by_region(pos) {
-    // condition for features that cross 0
-    if (this.sgb.circular && this.sgb.expanded_domain_includes_zero) {
-      return ((pos < this.region_end) || (pos > this.region_start))
-    } else {
-      return (pos < this.region_end) && (pos > this.region_start);
-    }
+    self.contig_filt = self.data
+      .params({ cc: chromo_column, contig: self.sgb.contig})
+      .filter((d, $) => d[$.cc] == $.contig);
   }
 
   filter_points_by_region() {
     const self = this;
     self.region_start = self.sgb.circular_coordinate(self.sgb.expanded_domain[0]);
     self.region_end = self.sgb.circular_coordinate(self.sgb.expanded_domain[1]);
-    self.filt_data = self.contig_filt.filter((d) => self.filter_one_point_by_region(d.pos));
-  }
-
-  filter_one_feature_by_region(feat_start, feat_end) {
-    // condition for features that cross 0
     if (this.sgb.circular && this.sgb.expanded_domain_includes_zero) {
-      return ((feat_start < this.region_end) || (feat_end > this.region_start) || (feat_end < feat_start))
+      self.filt_data = self.contig_filt
+        .params({ pc: self.pos_col, end: self.region_end, start: self.region_start })
+        .filter((d, $) => ((d[$.pc] < $.region_end) || (d[$.pc] > $.region_start)));
     } else {
-      return (feat_start < this.region_end) && (feat_end > this.region_start);
+      self.filt_data = self.contig_filt
+        .params({ pc: self.pos_col, end: self.region_end, start: self.region_start })
+        .filter((d, $) => (d[$.pc] < $.region_end) && (d[$.pc] > $.region_start));
     }
   }
 
@@ -863,7 +857,15 @@ class baseData {
     const self = this;
     self.region_start = self.sgb.circular_coordinate(self.sgb.expanded_domain[0]);
     self.region_end = self.sgb.circular_coordinate(self.sgb.expanded_domain[1]);
-    self.filt_data = self.contig_filt.filter((d) => self.filter_one_feature_by_region(d[self.start_col], d[self.end_col]));
+    if (this.sgb.circular && this.sgb.expanded_domain_includes_zero) {
+      self.filt_data = self.contig_filt
+        .params({ sc: self.start_col, ec: self.end_col, end: self.region_end, start: self.region_start })
+        .filter((d, $) => ((d[$.sc] < $.end) || (d[$.ec] > $.start) || (d[$.ec] < d[$.sc])));
+    } else {
+      self.filt_data = self.contig_filt
+        .params({ sc: self.start_col, ec: self.end_col, end: self.region_end, start: self.region_start })
+        .filter((d, $) => (d[$.sc] < $.end) && (d[$.ec] > $.start));
+    }
   }
 }
 

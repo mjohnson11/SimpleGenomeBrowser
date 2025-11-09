@@ -2,9 +2,11 @@
 // They must define a param data_name during the synchronous part of the constructor
 
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+import * as aq from 'https://cdn.jsdelivr.net/npm/arquero@7.2.0/dist/arquero.min.js/+esm';
 
 import { geneTrack, quantitativeFeatureTrack } from "./SGB_tracks.js";
-import { staticFeatureData, staticPointData } from "../src/SimpleGenomeBrowser.js";
+import { staticFeatureData, staticPointData } from "./SimpleGenomeBrowser.js";
+import { data_shaper } from "./util.js";
 
 class gffTrack extends geneTrack {
   /**
@@ -24,8 +26,8 @@ class gffTrack extends geneTrack {
    *   Can customize these methods to alter the appearance or information displayed for GFF-loaded genes.
    */
 
-  constructor(sgb, name, h, top, config, gff_file, type_filter='CDS') {
-    super(sgb, name, h, top, config, 'scaffoldId', 'begin', 'end', 'locusId');
+  constructor(sgb, name, config, gff_file, type_filter='CDS') {
+    super(sgb, name, config, 'scaffoldId', 'begin', 'end', 'locusId');
     const self = this;
     self.gff_file = gff_file;
     self.data_name = self.name+'_data';
@@ -52,7 +54,7 @@ class gffTrack extends geneTrack {
           'track': self
         }
       }
-      self.data = new staticFeatureData(self.sgb, self.name+'_data', raw_data, config);
+      self.data = new staticFeatureData(self.sgb, self.name+'_data', aq.from(raw_data), config);
       console.log('gff data loaded:', self.data);
       // Updating autocomplete search bar
       self.sgb.autoCompleteEl.data = {src: Object.keys(self.sgb.search_dict).map((k) => k + ' ' + self.sgb.search_dict[k].datum.name + ' ' + self.sgb.search_dict[k].datum.desc)};
@@ -94,8 +96,8 @@ class gbTrack extends geneTrack {
    * - Inherits customizable methods from `geneTrack`: `hover_function`, `click_function`, `get_feature_stroke`, `get_feature_fill`, `make_gene_display`, `load_region`.
    *   Can customize these methods to alter the appearance or information displayed for Genbank-loaded genes.
    */
-  constructor(sgb, name, h, top, config, genbank_json, type_filter='CDS') {
-    super(sgb, name, h, top, config, 'scaffoldId', 'begin', 'end', 'locusId')
+  constructor(sgb, name, config, genbank_json, type_filter='CDS') {
+    super(sgb, name, config, 'scaffoldId', 'begin', 'end', 'locusId')
     const self = this;
     self.genbank_json = genbank_json;
     self.data_name = self.name+'_data';
@@ -126,7 +128,7 @@ class gbTrack extends geneTrack {
         }
       }
     }
-    self.data = new staticFeatureData(self.sgb, self.name+'_data', raw_data, config);
+    self.data = new staticFeatureData(self.sgb, self.name+'_data', aq.from(raw_data), config);
     console.log('gb data loaded:', self.data);
     // Updating autocomplete search bar
     self.sgb.autoCompleteEl.data = {src: Object.keys(self.sgb.search_dict).map((k) => k + ' ' + self.sgb.search_dict[k].datum.name + ' ' + self.sgb.search_dict[k].datum.desc)};
@@ -154,14 +156,14 @@ class geneTableTrack extends geneTrack {
    *   Can customize these methods to alter the appearance or information displayed for gene table-loaded genes.
    */
 
-  constructor(sgb, name, h, top, config, gene_file) {
-    super(sgb, name, h, top, config, 'scaffoldId', 'begin', 'end', 'locusId')
+  constructor(sgb, name, config, gene_file) {
+    super(sgb, name, config, 'scaffoldId', 'begin', 'end', 'locusId')
     const self = this;
     self.gene_file = gene_file;
     self.data_name = self.name+'_data';
-    d3.tsv(gene_file, d3.autoType).then(function(tdata) {
+    aq.loadCSV(gene_file, {delimiter: '\t'}).then(function(tdata) {
       let raw_data  = tdata;
-      for (let row of raw_data) {
+      for (let row of raw_data.objects()) {
         row['locusId'] = String(row['locusId']); // convert to string to avoid number-string comparison issues
         // Adding info to the search index
         self.sgb.search_dict[row.locusId] = {
@@ -185,26 +187,22 @@ class geneTableTrack extends geneTrack {
 
 class heatmapTrack extends quantitativeFeatureTrack {
 
-  constructor(browser, name, h, top, config, display_columns, display_names, contig_column, start_column, end_column, id_column, c_scale, data_file_or_object) {
-    super(browser, name, h, top, config, display_columns, display_names, contig_column, start_column, end_column, id_column);
+  constructor(browser, name, config, full_column_config, contig_column, start_column, end_column, id_column, c_scale, data_file_or_object) {
+    super(browser, name, config, full_column_config, contig_column, start_column, end_column, id_column);
     const self = this;
     self.data_name = self.name+'_data';
     self.set_diverging_colorscale(c_scale);
+    self.include_halfs = config.include_halfs ?? true;
+    self.icols = config.icols ?? ['locusId', 'sysName', 'scaffoldId', 'begin', 'end', 'strand', 'name', 'desc'];
 
-    let raw_data;
     self.loadingPromise = new Promise((resolve, reject) => {
       const dataPromise = (typeof data_file_or_object === 'object')
         ? Promise.resolve(data_file_or_object)  // Use existing object if provided
-        : d3.tsv(data_file_or_object, d3.autoType); // Otherwise, load from TSV
-      dataPromise.then(data => {
-        raw_data = data;
-        raw_data.forEach((row, i) => {
-          row.begin = row.begin || row.start; // terminology thing to fix
-        });
-        console.log('tnseq data loaded:', raw_data);
-        self.data = new staticFeatureData(self.sgb, self.name+'_data', raw_data, config);
-        self.data.filter_by_contig(self.contig_column);
-        self.data.update_data();
+        : aq.loadCSV(data_file_or_object, {delimiter: '\t'}); // Otherwise, load from TSV
+      dataPromise.then(raw_data => {
+        console.log('heatmap data loaded:', raw_data);
+        self.og_data = raw_data;
+        self.update_data_by_column_config();
         self.display_region();
         resolve(self);
       }).catch(reject);

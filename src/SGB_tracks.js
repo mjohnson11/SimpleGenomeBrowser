@@ -6,8 +6,9 @@
 // ADDING IN NICE FORGOTTEN FEATURES
 
 import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+import * as aq from 'https://cdn.jsdelivr.net/npm/arquero@7.2.0/dist/arquero.min.js/+esm';
 import { SimpleGenomeBrowser, baseData, staticPointData, staticFeatureData, serverPointData, serverFeatureData } from "./SimpleGenomeBrowser.js";
-import { measure_text } from "./util.js";
+import { measure_text, open_column_selector, data_shaper } from "./util.js";
 
 class baseTrack {
   /**
@@ -31,30 +32,39 @@ class baseTrack {
    * - `filter_by_contig()`: Must be overridden by subclasses to implement track-specific 
    *                         filtering logic when the displayed contig changes.
    */
-  constructor(sgb, name, h, top, config) {
+  constructor(sgb, name, config) {
     const self = this;
     self.sgb = sgb;
     self.name = name;
-    self.h = h;
-    self.top = top;
     
     self.config = config;
-    self.load_threshold = config.load_threshold || 1000000;
+    self.title_h = config.title_h ?? 24;
+    self.load_threshold = config.load_threshold ?? 1000000;
     self.expanded = true;
 
     // holding div just has the clickable title to expand / hide tracks
     self.holding_div = self.sgb.outer_div.append('div')
+      .attr('class', 'sgb_track_holding_div')
       .style('width', self.sgb.display_w)
-      .style('height', self.h)
       .style('position', 'relative')
       .style('left', -1*self.sgb.w)
 
+    // make a div 20 pixels tall to hold the title and other controls, which
+    // should automatically flow left to right
+    self.controls_div = self.holding_div.append('div')
+      .attr('class', 'sgb_track_controls')
+      .style('position', 'relative')
+      .style('left', self.sgb.w)
+      .style('margin-bottom', 5)
+      .style('display', 'flex')
+      .style('align-items', 'left')
+      .style('height', self.title_h);
     
     self.div = self.holding_div.append('div')
+      .style('position', 'relative')
 
     self.svg = self.div.append('svg')
       .attr('width', self.sgb.display_w)
-      .attr('height', self.h)
       .style('position', 'absolute')
       .style('left', 0)
       .style('top', 0)
@@ -68,17 +78,18 @@ class baseTrack {
       .style('position', 'absolute')
       .style('left', 0)
       .style('top', 0)
-      .style('width', self.sgb.display_w)
-      .style('height', self.h)
+      .style('width', '100%')
+      .style('height', '100%')
       .style('background-color', '#CCC')
       .style('z-index', 10)
       .style('visibility', 'hidden')
-      
 
     self.force_load_div.append('button')
-      .style('position', 'absolute')
+      // use css to center the button in the div
+      .style('position', 'relative')
       .style('left', '50%')
-      .style('top', self.h/2-10)
+      .style('top', '50%')
+      .style('transform', 'translate(-50%, -50%)')
       .html('Click to force load')
       .on('click', () => {
         self.force_load_on = false;
@@ -91,24 +102,39 @@ class baseTrack {
     }
   }
 
-  show_title(title, fontsize=12) {
+  update_track_height(new_h) {
+    const self = this;
+    self.track_h = new_h;
+    self.div.style('height', self.track_h);
+    self.svg.attr('height', self.track_h);
+  }
+
+  show_title(title, fontsize=14) {
     const self = this;
     if (self.title_div) self.title_div.remove();
-    self.title_div = self.holding_div.append('div')
+    self.title_div = self.controls_div.append('div')
       .attr('class', 'track_title')
-      .style('position', 'absolute')
-      .style('right', self.sgb.w+10)
       .style('top', 0)
+      .style('height', self.title_h-6)
       .style('background-color', '#CCC')
       .style('color', 'black')
       .style('padding', 2)
+      .style('margin', 1)
+      .style('margin-right', 20)
       .style('padding-left', 6)
       .style('padding-right', 6)
       .style('border-radius', '5px')
       .style('font-size', fontsize+'px')
       .style('text-align', 'center')
+      .style('cursor', 'pointer')
       .style('z-index', 11)
       .text(title)
+      .on('mouseover', () => {
+        self.title_div.style('opacity', 0.8);
+      })
+      .on('mouseout', () => {
+        self.title_div.style('opacity', 1);
+      })
       .on('click', () => {
         if (self.expanded) {
           self.div.style('display', 'none');
@@ -120,7 +146,28 @@ class baseTrack {
           self.expanded = true;
           self.display_region();
         }
-      })
+      });
+  }
+
+  add_settings_button(callback) {
+    const self = this;
+    self.settings_btn = self.controls_div.append('div')
+      .attr('class', 'sgb_settings_btn')
+      .style('height', self.title_h-6)
+      .style('margin', 1)
+      .style('padding', 2)
+      .style('padding-left', 6)
+      .style('padding-right', 6)
+      .style('border-radius', '5px')
+      .style('font-size', Math.max(10, self.title_h-10) + 'px')
+      .style('text-align', 'center')
+      .style('cursor', 'pointer')
+      .style('background-color', '#CCC')
+      .style('z-index', 11)
+      .text('\u2699') // small gear/setting icon
+      .on('mouseover', function() { d3.select(this).style('opacity', 0.8); })
+      .on('mouseout', function() { d3.select(this).style('opacity', 1); })
+      .on('click', (event) => { callback(event); });
   }
 
   hide_title() {
@@ -136,15 +183,11 @@ class baseTrack {
     const fontsize = config.fontsize || 12;
     const height = config.height || fontsize+4;
 
-    const legend_div = self.div.append('div')
+    const legend_div = self.controls_div.append('div')
       .attr('class', 'color_legend')
       .style('position', 'absolute')
       .style('background-color', '#CCC')
       .style('border', '1px solid black')
-      .style('left', left+'px')
-      .style('top', top+'px')
-      .style('width', width+'px')
-      .style('height', height+'px')
       .style('text-align', 'center')
       .style('z-index', 9);
 
@@ -248,8 +291,8 @@ class baseFeatureTrack extends baseTrack {
    * This class is intended to be further extended by specific feature track types.
    */
 
-  constructor(sgb, name, h, top, config, contig_column, start_column, end_column, id_column) {
-    super(sgb, name, h, top, config);
+  constructor(sgb, name, config, contig_column, start_column, end_column, id_column) {
+    super(sgb, name, config);
     this.contig_col = contig_column;
     this.start_col = start_column;
     this.end_col = end_column;
@@ -287,6 +330,11 @@ class geneTrack extends baseFeatureTrack {
    * - `get_feature_fill(d)`: Can override to customize the fill color of gene features.
    * - `make_gene_display(d)`: Can override to completely customize the SVG elements used to display a gene feature.
    */
+
+  constructor(sgb, name, config, contig_column, start_column, end_column, id_column) {
+    super(sgb, name, config, contig_column, start_column, end_column, id_column);
+    this.update_track_height(config.track_h ?? 40);
+  }
 
   load_region() {
     const self = this;
@@ -332,7 +380,7 @@ class geneTrack extends baseFeatureTrack {
     const height = Math.max(Math.min(30, 1000000/self.sgb.domain_wid), 20);
     const halfHeight = height / 2;
     const chevron_size = (width < 10) ? 0 : Math.min(width/4, 20);
-    const top = 20
+    const top = 0
     let points = '';
     if (d.strand) {
       if (d.strand === '-') {
@@ -344,29 +392,36 @@ class geneTrack extends baseFeatureTrack {
       points = `${right},${top} ${right},${top+height} ${right-width},${top+height} ${right-width},${top}`;
     }
 
-    const fontsizes = [10, 12, 14, 16, 18, 20, 22, 24, 26, 28, 30]
-    const textBuf = 2.5
-    let label = String(d.name);
-    let fontsize = fontsizes[0]
-    let labelsize = measure_text(label, fontsize)
-    let labelVisible = (labelsize+2*textBuf+chevron_size < right-left)
-    if (labelVisible) {
-      for (let f of fontsizes) {
-        labelsize = measure_text(label, f)
-        if (labelsize+2*textBuf+chevron_size < right-left) {
-          fontsize = f
-        } else {
-          break
-        }
-      }
-    }
-    const x_pos = d.strand === '+' ? left+textBuf : left+textBuf+chevron_size;
-    const y_pos = top+height-textBuf-2;
     const stroke = self.get_feature_stroke(d);
     const fill = self.get_feature_fill(d);
     const strokeWid = 1;
-    const chev = `<polygon points="${points}" stroke=${stroke} fill=${fill} stroke-width=${strokeWid} />`
-    const label_use = labelVisible ? `<text x=${x_pos} y=${y_pos} fill="#FFF">${label}</text>` : '';
+    const chev = `<polygon points="${points}" stroke=${stroke} fill=${fill} stroke-width=${strokeWid} />`;
+
+    let label_use = '';
+    if (right-left > 20) {
+      const fontsizes = [8, 9, 10, 12, 14, 16, 18, 20]
+      const textBuf = 2.5
+      let label = String(d.name);
+      let fontsize = fontsizes[0]
+      let labelsize = measure_text(label, fontsize)
+      let labelVisible = ((labelsize+2*textBuf+chevron_size) < right-left)
+      if (labelVisible) {
+        for (let f of fontsizes) {
+          labelsize = measure_text(label, f)
+          if ((labelsize+2*textBuf+chevron_size) < right-left) {
+            fontsize = f
+          } else {
+            break
+          }
+        }
+      }
+      const x_pos = d.strand === '+' ? left+textBuf : left+textBuf+chevron_size;
+      const y_pos = top+height-textBuf-2;
+      label_use = labelVisible ? `<text x=${x_pos} y=${y_pos} font-size=${fontsize} fill="#FFF">${label}</text>` : '';
+    } else {
+      label_use = '';
+    }
+
     return chev+label_use;
   }
 }
@@ -379,8 +434,6 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
    *
    * @param {SimpleGenomeBrowser} sgb - The SimpleGenomeBrowser instance this track belongs to.
    * @param {string} name - The name of the track.
-   * @param {number} h - The height of the track in pixels.
-   * @param {number} top - The top position of the track in pixels.
    * @param {object} [config={}] - An optional configuration object for the track.
    * @param {array} display_columns - An array of column names from the data to display as quantitative rows in the heatmap.
    * @param {array} display_names - An array of display names corresponding to `display_columns`, shown as row titles.
@@ -407,37 +460,23 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
    *                                        Receives the mouse event and the display column name (d).
    */
 
-  constructor(sgb, name, h, top, config, display_columns, display_names, contig_column, start_column, end_column, id_column) {
-    super(sgb, name, h, top, config, contig_column, start_column, end_column, id_column);
+  constructor(sgb, name, config, full_column_config, contig_column, start_column, end_column, id_column) {
+    super(sgb, name, config, contig_column, start_column, end_column, id_column);
     const self = this;
-    self.display_columns = display_columns;
-    self.display_names = display_names;
-    self.block_h = (self.h * 0.9 / self.display_columns.length) * 0.9;
-    self.block_ys = Array.from({ length: display_columns.length }, (_, i) => self.h * 0.05 + self.block_h * (1 / 0.9) * i);
-    self.col_name_click = null;
+    // Special case for inputting a simple list of column names
+    if (Array.isArray(full_column_config) && (typeof full_column_config[0] === 'string')) {
+      self.full_column_config = full_column_config.map(col_name => ({ name: col_name, column: col_name }));
+    } else {
+      self.full_column_config = full_column_config;
+    }
+    
+    let current_columns = config.current_columns ?? self.full_column_config.map(c => c.name);
+
+    self.column_config = self.full_column_config.filter(c => current_columns.includes(c.name));
+    self.inactive_config = self.full_column_config.filter(c => !current_columns.includes(c.name));
 
     self.divergingColorScale = d3.scaleDiverging();
-
-    // Create canvas element outside the SVG, but in the same div
-    self.canvas = self.div.append('canvas')
-      .attr('width', self.sgb.display_w)
-      .attr('height', self.h)
-      .style('position', 'absolute')
-      .style('left', 0)
-      .style('top', 0)
-      .style('z-index', 0); 
-
     self.svg.style('z-index', 1);
-
-    // div to hold row names
-    self.row_title_div = self.div.append('div')
-      .style('width', '200px')
-      .style('position', 'absolute')
-      .style('left', self.sgb.w)
-      .style('top', 0)
-      .style('z-index', 2);
-
-    self.ctx = self.canvas.node().getContext('2d');
 
     self.highlightRect = self.svg.append('rect') // single rect for highlighting
       .attr('fill', 'rgba(255, 0, 0, 0.5)')
@@ -447,6 +486,67 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       .on('mousemove', (event) => self.handleMousemove(event))
       .on('mouseout', () => self.handleMouseout())
       .on('click', (event) => self.handleClick(event));
+
+    self.reset_display();
+
+    
+    self.add_settings_button(() => {
+      open_column_selector({
+        column_config: self.column_config,
+        unused_config: self.inactive_config,
+        title: `Select columns for ${self.name}`,
+        onSave: (new_current, new_unused) => {
+            self.column_config = new_current;
+            self.inactive_config = new_unused;
+            self.update_data_by_column_config();
+            self.reset_display();
+            self.display_region();
+          }
+        });
+      });
+    
+  }
+
+  update_data_by_column_config() {
+    // TODO this is data stuff, should probably be handled in data class, but...
+    const self = this;
+    self.data = new staticFeatureData(
+      self.sgb, self.name+'_data', 
+      data_shaper(self.og_data, self.column_config, self.icols, self.include_halfs), 
+      self.config);
+    console.log(self.data)
+    self.data.filter_by_contig(self.contig_column);
+    self.data.update_data();
+  }
+
+  reset_display() {
+    const self = this;
+    self.block_h = self.config.block_height ?? 20;
+    self.block_buffer = self.config.block_buffer ?? 1.1;
+    self.block_ys = Array.from({ length: self.column_config.length }, (_, i) => self.block_h*self.block_buffer*i);
+    self.col_name_click = null;
+    self.canvas_h = self.block_h * self.block_buffer * self.column_config.length;
+    self.update_track_height(self.canvas_h);
+
+    // Create canvas element outside the SVG, but in the same div
+    self.div.select('canvas').remove(); // remove existing canvas if any
+    self.canvas = self.div.append('canvas')
+      .attr('width', self.sgb.display_w)
+      .attr('height', self.canvas_h)
+      .style('position', 'absolute')
+      .style('left', 0)
+      .style('top', 0)
+      .style('z-index', 0); 
+    self.ctx = self.canvas.node().getContext('2d');
+
+    // div to hold row names
+    if (self.row_title_div) self.row_title_div.remove();
+    self.row_title_div = self.div.append('div')
+      .style('width', '200px')
+      .style('position', 'absolute')
+      .style('left', self.sgb.w)
+      .style('top', 0)
+      .style('z-index', 2);
 
     self.pixelMap = null; // Will store our pre-calculated pixel data.
 
@@ -461,69 +561,66 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
   display_column_names() {
     const self = this;
     self.row_title_div.selectAll('.heatmap_col_name')
-      .data(self.display_columns)
+      .data(self.column_config)
       .join('div') // Use .join('div') for creating and updating divs
       .attr('class', 'heatmap_col_name')
       .style('position', 'absolute')
-      .style('top', (d, i) => `${self.block_ys[i] - self.block_h * (0.05 / 0.9)}px`)
+      .style('top', (d, i) => `${self.block_ys[i]}px`)
       .style('left', '0px')
       .style('width', '200px')
-      .style('height', `${self.block_h * (1 / 0.9)}px`)
+      .style('height', `${self.block_h}px`)
       .style('background-color', (d, i) => i % 2 == 0 ? '#DDD' : '#FFF')
       .style('display', 'flex')
       .style('align-items', 'center')
       .style('padding-left', '5px')
       .style('box-sizing', 'border-box') // Important to include padding in the element's total width and height
       .style('cursor', 'pointer')
-      .html((d, i) => `<span style="font-size: ${Math.min(self.block_h, 16)}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; width: 100%;">${self.display_names[i]}</span>`)
+      .html((d, i) => `<span style="font-size: ${Math.min(self.block_h, 16)}px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; width: 100%;">${d.name}</span>`)
       .on('mouseover', function (event, d) {
-        d3.select(this).style('background-color', 'lightgray'); // Example hover effect
+        d3.select(this).style('background-color', '#F88');
         if (self.col_name_hover_function) self.col_name_hover_function(event, d);
       })
       .on('mouseout', function () {
-        d3.select(this).style('background-color', (d) => d === self.focal_row ? "FAA" : self.display_columns.indexOf(d) % 2 == 0 ? '#DDD' : '#FFF');
+        self.row_title_div.selectAll('.heatmap_col_name').style('background-color', (data, i) => {
+          return data.name === self.focal_row ? '#FAA' : i % 2 === 0 ? '#DDD' : '#FFF';
+        });
         self.sgb.hide_tooltip();
       })
       .on('click', function(event, d) {
-        self.focal_row = d;
-        self.row_title_div.selectAll('.heatmap_col_name').style('background-color', (data, index) => {
-          return data === self.focal_row ? '#FAA' : index % 2 === 0 ? '#DDD' : '#FFF';
+        self.focal_row = d.name;
+        self.row_title_div.selectAll('.heatmap_col_name').style('background-color', (data, i) => {
+          return data.name === self.focal_row ? '#FAA' : i % 2 === 0 ? '#DDD' : '#FFF';
         });
         if (self.col_name_click_function) self.col_name_click_function(event, d);
         event.stopPropagation();
       });
 
-    self.focal_row = self.display_columns[0];
+    self.focal_row = self.column_config[0].name;
+    console.log('focal row set to', self.focal_row);
     // Set initial background color for the focused row
-    self.row_title_div.selectAll('.heatmap_col_name').style('background-color', (d) =>
-      d === self.focal_row ? '#FAA' : self.row_title_div.select(`.heatmap_col_name:nth-child(${self.display_columns.indexOf(d) + 1})`).style('background-color')
-    );
+    self.row_title_div.selectAll('.heatmap_col_name').style('background-color', function(d) {
+      return d.name === self.focal_row ? '#FAA' : d3.select(this).style('background-color');
+    });
   }
 
-  col_name_click_function(event, col_name) {
+  col_name_click_function(event, col) {
     // default function for clicking a row name (see make_summary_sidebar below)
-    this.make_summary_sidebar(col_name);
+    this.make_summary_sidebar(col);
     // optional additional function to add behavior on click
     if (this.col_name_click) this.col_name_click();
   }
 
-  make_summary_sidebar(col_name) {
+  make_summary_sidebar(col) {
     // default sidebar function, assumes data has a 'name' column for features
     const self = this;
 
-    const genesWithScores = self.data.data
-      .filter(row => row[col_name] !== null && !isNaN(row[col_name])) 
-      .map(row => ({
-        gene: row,
-        score: row[col_name]
-      }))
-      .sort((a, b) => b.score - a.score); // Sort by score descending
+    const sorted = self.data.data
+      .params({c: col.column})
+      .orderby(aq.desc((d, $) => d[$.c]));
 
-    console.log('genes with scores', genesWithScores);
-  
-    const topGenes = genesWithScores.slice(0, 10);
-    const bottomGenes = genesWithScores.slice(-10);
-    
+    const topGenes = sorted.slice(0,10).objects().map(row => ({ gene: row, score: row[col.column] }));
+    const bottomGenes = sorted.slice(-10).objects().map(row => ({ gene: row, score: row[col.column] }));
+
     self.sgb.sidebar_content.selectAll('*').remove();
     const sidebar_div = self.sgb.sidebar_content.append('div').attr('class', 'gene-info')
 
@@ -553,7 +650,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
     pm_contentDiv.append('div')
       .attr('class', 'gene-table')
-      .html(`<h3 style="font-size: 14px; margin: 8px 0;">${col_name}</h3>`)
+      .html(`<h3 style="font-size: 14px; margin: 8px 0;">${col.name}</h3>`)
     
     const table = pm_contentDiv.select('.gene-table').append('table')
       .style('width', '350px') 
@@ -653,13 +750,13 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       .style('margin', '10px');
 
     select.selectAll('option')
-      .data(self.display_columns)
+      .data(self.column_config)
       .enter()
       .append('option')
-      .text(d => d)
-      .attr('value', d => d);
+      .text(d => d.name)
+      .attr('value', d => d.column);
 
-    let yAxisColumn = self.display_columns[0]; // Default y-axis column
+    let yAxisColumn = self.column_config[0].column; // Default y-axis column
 
     select.on('change', function() {
       yAxisColumn = d3.select(this).property('value');
@@ -682,11 +779,11 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
     function updateScatterplot() {
       // Set nulls to 0 in both columns
-      const plotData = self.data.contig_filt.map(row => ({
-        gene: row,
-        x: row[col_name] || 0,
-        y: row[yAxisColumn] || 0
-      }));
+
+      const plotData = self.data.data
+        .select([col.column, yAxisColumn, self.contig_col, self.start_col, self.end_col, self.id_col, 'name', 'desc'])
+        .rename({[col.column]: 'x', [yAxisColumn]: 'y'})
+        .objects();
 
       // Update scales
       xScale = d3.scaleLinear()
@@ -718,13 +815,13 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
         .attr('r', 3)
         .attr('fill', '#333')
         .on('click', (event, d) => {
-          self.sgb.display_feature(d.gene[self.contig_col], d.gene[self.start_col], d.gene[self.end_col]);
+          self.sgb.display_feature(d[self.contig_col], d[self.start_col], d[self.end_col]);
         })
         .on('mouseover', function(event, d) {
           d3.select(this)
             .attr('fill', 'red')
             .raise();
-          self.sgb.default_gene_tooltip_func(event, d.gene);
+          self.sgb.default_gene_tooltip_func(event, d);
         })
         .on('mouseout', () => {
           svg.selectAll('.dot').attr('fill', '#333')
@@ -737,7 +834,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
           .attr("y", height + margin.bottom)
           .style("text-anchor", "middle")
           .style("font-size", "10px")
-          .text(col_name);
+          .text(col.name);
 
         svg.append("text")
           .attr("transform", "rotate(-90)")
@@ -756,33 +853,36 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
 
   load_region() {
     const self = this;
+    self.object_data = self.data.filt_data.objects(); // TODO consider arquero...
+
     //console.log('Filtered heatmap data', self.data.filt_data);
     // Clear the canvas
-    self.ctx.clearRect(0, 0, self.sgb.display_w, self.h);
+    self.ctx.clearRect(0, 0, self.sgb.display_w, self.canvas_h);
 
     // Create pixel map and render canvas in a single loop
-    self.pixelMap = Array(self.sgb.display_w).fill(null).map(() => Array(self.h).fill(null));
+    self.pixelMap = Array(self.sgb.display_w).fill(null).map(() => Array(self.canvas_h).fill(null));
 
-    for (let dataIndex = 0; dataIndex < self.data.filt_data.length; dataIndex++) {
-      const d = self.data.filt_data[dataIndex];
+    for (let dataIndex = 0; dataIndex < self.object_data.length; dataIndex++) {
+      const d = self.object_data[dataIndex];
       const [left, right] = self.sgb.get_feature_pixel_position(d[self.start_col], d[self.end_col]);
 
-      for (let colIndex = 0; colIndex < self.display_columns.length; colIndex++) {
-        if (d[self.display_columns[colIndex]]) {
+      for (let colIndex = 0; colIndex < self.column_config.length; colIndex++) {
+        let column = self.column_config[colIndex].column;
+        if (d[column]) {
           const y = self.block_ys[colIndex];
           if (self.get_feature_block_fill) {
-            self.ctx.fillStyle = self.get_feature_block_fill(d, self.display_columns[colIndex]);
+            self.ctx.fillStyle = self.get_feature_block_fill(d, column);
           } else {
-            self.ctx.fillStyle = self.divergingColorScale(d[self.display_columns[colIndex]]);
+            self.ctx.fillStyle = self.divergingColorScale(d[column]);
           }
           self.ctx.fillRect(left, y, right - left, self.block_h);
           if (self.get_feature_block_stroke) {
-            self.ctx.strokeStyle = self.get_feature_block_stroke(d, self.display_columns[colIndex]);
+            self.ctx.strokeStyle = self.get_feature_block_stroke(d, column);
             self.ctx.strokeRect(left, y, right - left, self.block_h);
           }
           self.ctx.fillRect(left, y, right - left, self.block_h);
           for (let x = Math.max(0, Math.floor(left)); x < Math.min(self.sgb.display_w, Math.ceil(right)); x++) {
-              for (let py = Math.max(0, Math.floor(y)); py < Math.min(self.h, Math.ceil(y + self.block_h)); py++) {
+              for (let py = Math.max(0, Math.floor(y)); py < Math.min(self.canvas_h, Math.ceil(y + self.block_h)); py++) {
                 self.pixelMap[x][py] = { 'dataIndex': dataIndex, 'colIndex': colIndex };
               }
           }
@@ -804,7 +904,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       const pixelInfo = self.pixelMap[mouseX][mouseY];
 
       if (pixelInfo) {
-        const d = self.data.filt_data[pixelInfo.dataIndex];
+        const d = self.object_data[pixelInfo.dataIndex];
         const [left, right] = self.sgb.get_feature_pixel_position(d[self.start_col], d[self.end_col]);
         const y = self.block_ys[pixelInfo.colIndex];
 
@@ -814,12 +914,12 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
           .attr('width', right - left)
           .attr('height', self.block_h)
           .style('visibility', 'visible');
-        const column = self.display_columns[pixelInfo.colIndex];
-        if (self.hover_function) self.hover_function(event, column, d);
+        const col = self.column_config[pixelInfo.colIndex];
+        if (self.hover_function) self.hover_function(event, col, d);
 
         // keeping track of who was hovered and giving the option of a callback outside the track
         self.hoveredPixelInfo = pixelInfo;
-        if (self.callback) self.callback('mouseover', {datum: d, column: column, pixelInfo: pixelInfo, track: self});
+        if (self.callback) self.callback('mouseover', {datum: d, column: col, pixelInfo: pixelInfo, track: self});
 
         return; // exit early as we found a hit
       }
@@ -844,10 +944,10 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
       const pixelInfo = self.pixelMap[mouseX][mouseY];
 
       if (pixelInfo) {
-        const d = self.data.filt_data[pixelInfo.dataIndex];
-        const column = self.display_columns[pixelInfo.colIndex];
-        if (self.click_function) self.click_function(event, column, d);
-        if (self.callback) self.callback('click', {datum: d, column: column, pixelInfo: pixelInfo, track: self});
+        const d = self.object_data[pixelInfo.dataIndex];
+        const col = self.column_config[pixelInfo.colIndex];
+        if (self.click_function) self.click_function(event, col, d);
+        if (self.callback) self.callback('click', {datum: d, column: col, pixelInfo: pixelInfo, track: self});
       }
     }
   }
@@ -864,7 +964,7 @@ class quantitativeFeatureTrack extends baseFeatureTrack {
             <p><strong>Locus ID:</strong> ${locusId}</p>
             <p><strong>Name:</strong> ${name}</p>
             <p><strong>Description:</strong> ${desc}</p>
-            <p><strong>${column}:</strong> ${gene_object[column]}</p>
+            <p><strong>${column.name}:</strong> ${gene_object[column.column]}</p>
           </div>
         `
       
@@ -911,8 +1011,8 @@ class quantitativeYaxesTrack extends baseTrack {
    *                                       a data attribute and some info about the element's position
    */
 
-  constructor(sgb, name, h, top, column, config, contig_column) {
-    super(sgb, name, h, top, config);
+  constructor(sgb, name, column, config, contig_column) {
+    super(sgb, name, config);
     const self = this;
     self.contig_col = contig_column;
     self.column = column;
@@ -1135,8 +1235,8 @@ class quantitativePointTrack extends quantitativeYaxesTrack {
    *                                       pixelInfo is defined in the pixelMap of the child element, but typically has
    *                                       a data attribute and some info about the element's position
    */
-  constructor(sgb, name, h, top, column, config, contig_column, pos_column) {
-    super(sgb, name, h, top, column, config, contig_column)
+  constructor(sgb, name, column, config, contig_column, pos_column) {
+    super(sgb, name, column, config, contig_column)
     this.pos_col = pos_column;
     this.pointRadius = config.pointRadius || 2;
     this.highlight_element = this.svg.append('circle')
@@ -1227,8 +1327,8 @@ class quantitativeLineTrack extends quantitativeYaxesTrack {
    *                                       pixelInfo is defined in the pixelMap of the child element, but typically has
    *                                       a data attribute and some info about the element's position
    */
-  constructor(sgb, name, h, top, config, contig_column, start_column, end_column, id_column) {
-    super(sgb, name, h, top, config, contig_column)
+  constructor(sgb, name, config, contig_column, start_column, end_column, id_column) {
+    super(sgb, name, config, contig_column)
     this.start_col = start_column;
     this.end_col = end_column;
     this.lineWidth = config.lineWidth ?? 2;
