@@ -1,0 +1,90 @@
+#browser_div {
+  position: relative;
+  width: 100%;
+}
+
+.sidebar_title {
+  font-size: 1.5em;
+}
+
+.gene_tooltip p {
+  margin: 2px;
+}
+
+.zoom_thing:hover {
+  opacity: 0.5;
+}
+
+.sgb_gene:hover {
+  opacity: 0.7;
+}
+
+.gene_searchbar {
+  position: absolute;
+  top: 0px;
+  left: 5px;
+  width: 170px;
+  height: 25px;
+  outline: none;
+  border: none;
+  background-color: #FFF;
+  color: #333;
+}
+
+.autoComplete_wrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.autoComplete_wrapper ul {
+  position: absolute;
+  top: 28px;
+  left: 0px;
+  margin: 0px;
+  padding: 0px;
+  min-width: 220px;
+  max-width: 360px;
+  max-height: 300px;
+  overflow-y: auto;
+  background-color: #CCC;
+  border: 1px solid #999;
+  z-index: 30;
+}
+
+.autoComplete_wrapper li {
+  margin-top: 1px;
+  margin-bottom: 1px;
+  padding: 3px 8px;
+  background-color: #EEE;
+  list-style-type: none;
+  color: #333;
+  font-size: 13px;
+  z-index: 30;
+}
+
+.autoComplete_wrapper li mark {
+  color: #000;
+  font-weight: bold;
+  background-color: transparent;
+}
+
+.autoComplete_wrapper li:hover {
+  background-color: #FF8888;
+  cursor: pointer;
+}
+
+.autoComplete_wrapper li[aria-selected="true"] {
+  background-color: #FF8888;
+}
+
+.sgb_list_selected {
+  background-color: #FF8888 !important;
+}
+
+.sgb_item_filtered_out {
+  display: none;
+}
+
+button.active {
+  background-color: #FF8888;
+}

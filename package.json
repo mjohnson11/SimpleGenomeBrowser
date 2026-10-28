@@ -1,0 +1,29 @@
+{
+  "name": "simple-genome-browser",
+  "version": "1.0.0",
+  "description": "Interactive, lightweight genome browser for web applications",
+  "type": "module",
+  "main": "index.js",
+  "module": "index.js",
+  "style": "SimpleGenomeBrowser.css",
+  "files": [
+    "index.js",
+    "SimpleGenomeBrowser.js",
+    "SGB_data.js",
+    "SGB_tracks.js",
+    "data_tracks.js",
+    "helper_functions.js",
+    "util.js",
+    "SimpleGenomeBrowser.css",
+    "CUSTOM_TRACKS.md",
+    "README.md"
+  ],
+  "keywords": [
+    "genome-browser",
+    "genomics",
+    "bioinformatics",
+    "d3",
+    "esm"
+  ],
+  "license": "MIT"
+}
